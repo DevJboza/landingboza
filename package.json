@@ -1,15 +1,15 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "johan-boza-landing",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

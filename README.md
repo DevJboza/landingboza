@@ -9,7 +9,7 @@ El sitio presenta servicios de desarrollo web, proyectos destacados, informació
 - Next.js / React
 - TypeScript
 - Tailwind CSS
-- Vinext + Vite
+- Next.js (listo para Vercel)
 
 ## Ejecutar localmente
 
