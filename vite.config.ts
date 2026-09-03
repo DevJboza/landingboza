@@ -32,6 +32,10 @@ const localBindingConfig = {
 };
 
 export default defineConfig({
+  server: {
+    host: "0.0.0.0",
+    allowedHosts: ["terminal.local"],
+  },
   plugins: [
     vinext(),
     sites(),
