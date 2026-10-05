@@ -21,6 +21,38 @@ const item = z.object({
 const payload = z.object({
   body: z.object({ messages: z.array(item).min(1) }),
 });
+let discoveredSecret: string | null = null;
+
+async function webhookSecret() {
+  if (process.env.WASENDER_WEBHOOK_SECRET)
+    return process.env.WASENDER_WEBHOOK_SECRET;
+  if (discoveredSecret) return discoveredSecret;
+  const token = process.env.WASENDER_API_TOKEN;
+  if (!token) return null;
+  const baseUrl = (
+    process.env.WASENDER_API_URL || "https://api.wasender.dev"
+  ).replace(/\/$/, "");
+  try {
+    const response = await fetch(`${baseUrl}/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return null;
+    const settings = (await response.json()) as {
+      webhooks?: Array<{ secret?: unknown }>;
+    };
+    const secret = settings.webhooks?.find(
+      (webhook) =>
+        typeof webhook.secret === "string" && webhook.secret.length > 0,
+    )?.secret;
+    if (typeof secret !== "string") return null;
+    discoveredSecret = secret;
+    return discoveredSecret;
+  } catch {
+    return null;
+  }
+}
 function safeSignature(raw: string, given: string, secret: string) {
   const expected = createHmac("sha256", secret).update(raw).digest("hex");
   const normalized = given.replace(/^sha256=/i, "");
@@ -43,7 +75,7 @@ function messageDate(value?: string | number) {
 }
 
 export async function POST(request: Request) {
-  const secret = process.env.WASENDER_WEBHOOK_SECRET;
+  const secret = await webhookSecret();
   if (!secret) return fail("NOT_CONFIGURED", "Webhook no configurado", 503);
   const raw = await request.text();
   const signature = request.headers.get("x-wasender-signature") || "";
