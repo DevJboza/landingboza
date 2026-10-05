@@ -106,8 +106,15 @@ export async function POST(request: Request) {
       duplicates++;
       continue;
     }
-    const phone = normalizePhone(event.phone || event.from || "");
-    if (!phone) continue;
+    const phone = normalizePhone(
+      event.phone || event.from || String(event.chat_id || ""),
+    );
+    if (!phone) {
+      console.warn("[WaSender webhook] message skipped: missing sender", {
+        externalId: event.id,
+      });
+      continue;
+    }
     await db
       .insert(contacts)
       .values({ name: event.from_name || phone, phone })

@@ -28,8 +28,6 @@ const raw = JSON.stringify({
         type: "text",
         chat_id: chatId,
         from_me: false,
-        from: chatId,
-        phone,
         from_name: "Prueba Control Center",
         text: { body: text },
       },
