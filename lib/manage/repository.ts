@@ -313,8 +313,9 @@ export class PostgresManageRepository implements ManageRepository {
     let externalId: string | undefined;
     try {
       const response = await sendTextMessage(target.phone, body);
-      const data = response.data as Record<string, unknown> | undefined;
-      externalId = data?.msgId ? String(data.msgId) : undefined;
+      const remoteMessage = response.message as
+        Record<string, unknown> | undefined;
+      externalId = remoteMessage?.id ? String(remoteMessage.id) : undefined;
       await db
         .update(messages)
         .set({ status: "SENT", externalId })

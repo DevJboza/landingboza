@@ -22,7 +22,7 @@ if (process.env.WASENDER_API_TOKEN) {
     process.env.WASENDER_API_URL || "https://api.wasender.dev"
   ).replace(/\/$/, "");
   try {
-    const response = await fetch(`${base}/api/status`, {
+    const response = await fetch(`${base}/health`, {
       headers: { Authorization: `Bearer ${process.env.WASENDER_API_TOKEN}` },
     });
     result.wasenderHttp = response.status;

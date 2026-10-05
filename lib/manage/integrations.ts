@@ -44,17 +44,17 @@ export async function sendTextMessage(phone: string, text: string) {
   const url = process.env.WASENDER_API_URL || "https://api.wasender.dev",
     token = process.env.WASENDER_API_TOKEN;
   if (!token) throw new Error("WaSender is not configured");
-  return serverRequest(`${url.replace(/\/$/, "")}/api/send-message`, {
+  return serverRequest(`${url.replace(/\/$/, "")}/messages/text`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ to: phone, text }),
+    body: JSON.stringify({ to: phone.replace(/\D/g, ""), body: text }),
   });
 }
 export async function getWhatsAppStatus() {
   const url = process.env.WASENDER_API_URL || "https://api.wasender.dev",
     token = process.env.WASENDER_API_TOKEN;
   if (!token) return { configured: false };
-  return serverRequest(`${url.replace(/\/$/, "")}/api/status`, {
+  return serverRequest(`${url.replace(/\/$/, "")}/health`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 }

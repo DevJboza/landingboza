@@ -60,6 +60,8 @@ El seed solo crea los ajustes iniciales del agente y nunca inserta clientes fict
 
 `lib/manage/integrations.ts` contiene wrappers exclusivamente de servidor. Configura `N8N_BASE_URL`, `N8N_API_KEY`, `N8N_WEBHOOK_SECRET`, `WASENDER_API_URL`, `WASENDER_API_TOKEN`, `WASENDER_WEBHOOK_SECRET` y `OPENROUTER_API_KEY`. Las integraciones ausentes aparecen como no configuradas. El webhook `/api/webhooks/wasender` consume `body.messages[]`, verifica HMAC SHA-256 desde el body crudo mediante `x-wasender-signature` y evita duplicados por ID externo.
 
+WaSender utiliza exclusivamente `https://api.wasender.dev` como base predeterminada y un channel token `wsk_…` en el servidor. El envío individual usa `POST /messages/text` con `{ to, body }`; el health check seguro usa `GET /health`. Los teléfonos se normalizan a formato internacional sin `+`, espacios ni guiones.
+
 ## Límites deliberados del MVP
 
 - El archivo de mock histórico permanece únicamente como referencia demo y no se importa en producción.
