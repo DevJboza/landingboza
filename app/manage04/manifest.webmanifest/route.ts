@@ -1,0 +1,2 @@
+import { NextResponse } from "next/server";
+export function GET(){return NextResponse.json({name:"Boza Control Center",short_name:"Boza Control",description:"Centro privado de operaciones de BOZA",start_url:"/manage04",scope:"/manage04/",display:"standalone",background_color:"#07100f",theme_color:"#07100f",icons:[{src:"/manage04/icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}]},{headers:{"Content-Type":"application/manifest+json","Cache-Control":"public, max-age=3600"}})}
