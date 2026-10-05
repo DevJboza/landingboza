@@ -106,8 +106,14 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     [agent, setAgent] = useState(initial.agent);
   useEffect(() => {
     navigator.serviceWorker
-      ?.register("/manage04/sw.js", { updateViaCache: "none" })
-      .then((registration) => registration.update())
+      ?.getRegistrations()
+      .then((registrations) =>
+        Promise.all(registrations.map((registration) => registration.unregister())),
+      )
+      .catch(() => undefined);
+    caches
+      ?.keys()
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
       .catch(() => undefined);
     const handler = (event: Event) => {
       const e = event as InstallPromptEvent;
@@ -571,23 +577,7 @@ function Conversations(props: {
   initial: Conversation[];
   notify: (s: string) => void;
 }) {
-  const [conversations, setConversations] = useState(props.initial);
-  useEffect(() => {
-    if (conversations.length) return;
-    let active = true;
-    async function refresh() {
-      try {
-        const fresh = (await api("conversations")) as Conversation[];
-        if (active) setConversations(fresh);
-      } catch {}
-    }
-    const timer = setInterval(refresh, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [conversations.length]);
-  if (!conversations.length)
+  if (!props.initial.length)
     return (
       <div className="empty">
         <span>◫</span>
@@ -595,7 +585,7 @@ function Conversations(props: {
         <small>Las conversaciones entrantes de WaSender aparecerán aquí.</small>
       </div>
     );
-  return <ConversationInbox initial={conversations} notify={props.notify} />;
+  return <ConversationInbox {...props} />;
 }
 function ConversationInbox({
   initial,
@@ -612,33 +602,6 @@ function ConversationInbox({
     [mobileChat, setMobileChat] = useState(false);
   const current = list.find((x) => x.id === selected) || list[0];
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    let active = true;
-    async function refreshList() {
-      try {
-        const fresh = (await api("conversations")) as Conversation[];
-        if (!active || !fresh.length) return;
-        setList((previous) =>
-          fresh.map((conversation) => ({
-            ...conversation,
-            messages:
-              previous.find((item) => item.id === conversation.id)?.messages ||
-              [],
-          })),
-        );
-        setSelected((value) =>
-          fresh.some((conversation) => conversation.id === value)
-            ? value
-            : fresh[0].id,
-        );
-      } catch {}
-    }
-    const timer = setInterval(refreshList, 5000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, []);
   useEffect(
     () => end.current?.scrollIntoView({ behavior: "smooth" }),
     [current.messages.length],
