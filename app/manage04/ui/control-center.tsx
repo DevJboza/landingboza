@@ -570,6 +570,7 @@ function Conversations(props: {
 }) {
   const [conversations, setConversations] = useState(props.initial);
   useEffect(() => {
+    if (conversations.length) return;
     let active = true;
     async function refresh() {
       try {
@@ -582,7 +583,7 @@ function Conversations(props: {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [conversations.length]);
   if (!conversations.length)
     return (
       <div className="empty">
@@ -606,14 +607,14 @@ function ConversationInbox({
     [query, setQuery] = useState(""),
     [info, setInfo] = useState(false),
     [mobileChat, setMobileChat] = useState(false);
-  const current = list.find((x) => x.id === selected)!;
+  const current = list.find((x) => x.id === selected) || list[0];
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let active = true;
     async function refreshList() {
       try {
         const fresh = (await api("conversations")) as Conversation[];
-        if (!active) return;
+        if (!active || !fresh.length) return;
         setList((previous) =>
           fresh.map((conversation) => ({
             ...conversation,
@@ -621,6 +622,11 @@ function ConversationInbox({
               previous.find((item) => item.id === conversation.id)?.messages ||
               [],
           })),
+        );
+        setSelected((value) =>
+          fresh.some((conversation) => conversation.id === value)
+            ? value
+            : fresh[0].id,
         );
       } catch {}
     }
