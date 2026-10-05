@@ -89,6 +89,10 @@ async function api(path: string, init?: RequestInit) {
   return body.data;
 }
 export default function ControlCenter({ initial }: { initial: Initial }) {
+  const [data, setData] = useState(initial),
+    [dataState, setDataState] = useState<"loading" | "ready" | "error">(
+      "loading",
+    );
   const [view, setView] = useState<View>("dashboard"),
     [menu, setMenu] = useState(false),
     [search, setSearch] = useState(""),
@@ -117,6 +121,51 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     return () => {
       removeEventListener("beforeinstallprompt", handler);
       removeEventListener("keydown", keys);
+    };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      api("dashboard"),
+      api("conversations"),
+      api("prospects"),
+      api("leads"),
+      api("quotes"),
+      api("followups"),
+      api("outreach"),
+      api("agent/status"),
+    ])
+      .then(
+        ([
+          dashboard,
+          conversations,
+          prospects,
+          leads,
+          quotes,
+          followups,
+          outreach,
+          freshAgent,
+        ]) => {
+          if (!active) return;
+          setData({
+            dashboard,
+            conversations,
+            prospects,
+            leads,
+            quotes,
+            followups,
+            outreach,
+            agent: freshAgent,
+          });
+          setAgent(freshAgent);
+          setDataState("ready");
+        },
+      )
+      .catch(() => {
+        if (active) setDataState("error");
+      });
+    return () => {
+      active = false;
     };
   }, []);
   function go(v: View) {
@@ -151,17 +200,17 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     const q = search.toLowerCase().trim();
     if (!q) return [];
     return [
-      ...initial.conversations.map((x) => ({
+      ...data.conversations.map((x) => ({
         label: x.business,
         detail: x.name,
         view: "conversations" as View,
       })),
-      ...initial.prospects.map((x) => ({
+      ...data.prospects.map((x) => ({
         label: x.business,
         detail: x.category,
         view: "prospects" as View,
       })),
-      ...initial.leads.map((x) => ({
+      ...data.leads.map((x) => ({
         label: x.business,
         detail: stageNames[x.stage],
         view: "leads" as View,
@@ -169,7 +218,7 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     ]
       .filter((x) => `${x.label} ${x.detail}`.toLowerCase().includes(q))
       .slice(0, 6);
-  }, [search, initial]);
+  }, [search, data]);
   return (
     <div className="app-shell">
       <aside className={menu ? "sidebar open" : "sidebar"}>
@@ -196,7 +245,16 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
             >
               <span>{icon}</span>
               {label}
-              {id === "conversations" && initial.conversations.reduce((sum,item)=>sum+item.unread,0)>0 && <i>{initial.conversations.reduce((sum,item)=>sum+item.unread,0)}</i>}
+              {id === "conversations" &&
+                data.conversations.reduce((sum, item) => sum + item.unread, 0) >
+                  0 && (
+                  <i>
+                    {data.conversations.reduce(
+                      (sum, item) => sum + item.unread,
+                      0,
+                    )}
+                  </i>
+                )}
             </button>
           ))}
         </nav>
@@ -288,25 +346,30 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
           {notifications && <Notifications />}
         </header>
         <section className="content">
-          {view === "dashboard" && (
-            <Dashboard data={initial.dashboard} go={go} />
-          )}{" "}
+          {dataState === "loading" && (
+            <div className="data-banner">Conectando con PostgreSQL…</div>
+          )}
+          {dataState === "error" && (
+            <div className="data-banner error">
+              No fue posible cargar los datos.{" "}
+              <button onClick={() => location.reload()}>Reintentar</button>
+            </div>
+          )}
+          {view === "dashboard" && <Dashboard data={data.dashboard} go={go} />}{" "}
           {view === "conversations" && (
-            <Conversations initial={initial.conversations} notify={notify} />
+            <Conversations initial={data.conversations} notify={notify} />
           )}{" "}
           {view === "prospects" && (
             <Prospects
-              initial={initial.prospects}
-              outreach={initial.outreach}
+              initial={data.prospects}
+              outreach={data.outreach}
               notify={notify}
             />
           )}{" "}
-          {view === "leads" && (
-            <Leads initial={initial.leads} notify={notify} />
-          )}{" "}
-          {view === "quotes" && <Quotes data={initial.quotes} />}{" "}
+          {view === "leads" && <Leads initial={data.leads} notify={notify} />}{" "}
+          {view === "quotes" && <Quotes data={data.quotes} />}{" "}
           {view === "followups" && (
-            <Followups initial={initial.followups} notify={notify} />
+            <Followups initial={data.followups} notify={notify} />
           )}{" "}
           {view === "agent" && <Agent data={agent} toggle={toggleAgent} />}{" "}
           {view === "automations" && <Automations />}{" "}
