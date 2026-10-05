@@ -1,33 +1,132 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { getDb } from "@/db";
+import { activities, contacts, conversations, messages } from "@/db/schema";
 import { fail, ok } from "@/lib/manage/api";
-const schema = z.object({
-  event: z.literal("messages.post"),
-  data: z.object({
-    id: z.string(),
-    from: z.string(),
-    body: z.string().max(10000),
-  }),
+
+export const runtime = "nodejs";
+const item = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  type: z.string().optional(),
+  chat_id: z.union([z.string(), z.number()]).optional(),
+  from_me: z.boolean().default(false),
+  timestamp: z.union([z.number(), z.string()]),
+  status: z.string().optional(),
+  from: z.string().optional(),
+  phone: z.string().optional(),
+  from_name: z.string().optional(),
+  text: z.object({ body: z.string() }),
 });
+const payload = z.object({
+  body: z.object({ messages: z.array(item).min(1) }),
+});
+function safeSignature(raw: string, given: string, secret: string) {
+  const expected = createHmac("sha256", secret).update(raw).digest("hex");
+  const normalized = given.replace(/^sha256=/i, "");
+  const a = Buffer.from(normalized),
+    b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function POST(request: Request) {
-  const secret = process.env.N8N_WEBHOOK_SECRET;
+  const secret = process.env.WASENDER_WEBHOOK_SECRET;
   if (!secret) return fail("NOT_CONFIGURED", "Webhook no configurado", 503);
   const raw = await request.text();
-  const given = request.headers.get("x-webhook-signature") || "";
-  const expected = createHmac("sha256", secret).update(raw).digest("hex");
-  const a = Buffer.from(given),
-    b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b))
+  const signature = request.headers.get("x-wasender-signature") || "";
+  if (!safeSignature(raw, signature, secret))
     return fail("INVALID_SIGNATURE", "Firma inválida", 401);
-  let json;
+  let body: unknown;
   try {
-    json = JSON.parse(raw);
+    body = JSON.parse(raw);
   } catch {
     return fail("INVALID_PAYLOAD", "Payload inválido", 400);
   }
-  const parsed = schema.safeParse(json);
+  const parsed = payload.safeParse(body);
   if (!parsed.success) return fail("INVALID_PAYLOAD", "Payload inválido", 400);
-  return ok({ accepted: true, eventId: parsed.data.data.id }, 202);
+  const db = getDb();
+  let accepted = 0,
+    duplicates = 0;
+  for (const event of parsed.data.body.messages) {
+    const existing = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.externalId, event.id))
+      .limit(1);
+    if (existing.length) {
+      duplicates++;
+      continue;
+    }
+    const phone = event.phone || event.from;
+    if (!phone) continue;
+    await db
+      .insert(contacts)
+      .values({ name: event.from_name || phone, phone })
+      .onConflictDoNothing({ target: contacts.phone });
+    const [contact] = await db
+      .select()
+      .from(contacts)
+      .where(eq(contacts.phone, phone))
+      .limit(1);
+    let [conversation] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.contactId, contact.id))
+      .limit(1);
+    if (!conversation) {
+      [conversation] = await db
+        .insert(conversations)
+        .values({
+          contactId: contact.id,
+          status: "ACTIVE",
+          agentMode: "AUTO",
+          lastMessage: event.text.body,
+          lastMessageAt: new Date(Number(event.timestamp) * 1000),
+        })
+        .returning();
+    }
+    const sentAt = new Date(Number(event.timestamp) * 1000);
+    await db
+      .insert(messages)
+      .values({
+        conversationId: conversation.id,
+        externalId: event.id,
+        direction: event.from_me ? "OUTBOUND" : "INBOUND",
+        senderType: event.from_me ? "AGENT" : "CONTACT",
+        body: event.text.body,
+        status:
+          event.status === "read"
+            ? "READ"
+            : event.status === "delivered"
+              ? "DELIVERED"
+              : "SENT",
+        sentAt,
+      })
+      .onConflictDoNothing({ target: messages.externalId });
+    await db
+      .update(conversations)
+      .set({
+        lastMessage: event.text.body,
+        lastMessageAt: sentAt,
+        status: "ACTIVE",
+        unreadCount: event.from_me
+          ? conversation.unreadCount
+          : conversation.unreadCount + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, conversation.id));
+    await db
+      .insert(activities)
+      .values({
+        type: event.from_me ? "message.outbound" : "message.inbound",
+        title: event.from_me ? "Mensaje enviado" : "Cliente respondió",
+        detail: event.from_name || phone,
+        contactId: contact.id,
+        conversationId: conversation.id,
+      });
+    accepted++;
+  }
+  return ok({ accepted, duplicates });
 }
 export function GET() {
   return fail("METHOD_NOT_ALLOWED", "Método no permitido", 405);

@@ -12,12 +12,19 @@
     "lint": "eslint . --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "hash-password": "node scripts/hash-password.mjs",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx scripts/seed-db.ts",
+    "db:verify": "tsx scripts/verify-db.ts",
+    "test:repository": "tsx scripts/verify-repository.ts",
+    "test:integrations": "tsx scripts/check-integrations.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.5",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
+    "postgres": "^3.4.9",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "zod": "^4.6.5"
@@ -36,6 +43,7 @@
     "prettier": "^3.9.9",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",

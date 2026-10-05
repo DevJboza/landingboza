@@ -6,10 +6,10 @@ Aplicación privada dentro de `boza.lat`, disponible en `/manage04`. La landing 
 
 - `app/manage04`: shell, login, vistas responsive, PWA y estilos aislados.
 - `app/api/manage`: autenticación y API privada consistente (`{ success, data }`).
-- `lib/manage`: tipos, repositorio, mocks, sesión e integraciones de servidor.
+- `lib/manage`: tipos, repositorio PostgreSQL, sesión e integraciones de servidor.
 - `public/manage04`: icono y service worker. El worker nunca intercepta `/api/*`.
 
-El repositorio en memoria permite una demo interactiva sin credenciales externas. Se reinicia al reiniciar la instancia. Para producción, se puede conservar la interfaz de `repository.ts` y reemplazar sus operaciones por Drizzle/Postgres. El esquema D1 existente no se modificó y no se ejecutó ninguna migración destructiva.
+`PostgresManageRepository` es la única fuente de datos utilizada por la aplicación y las APIs. La conexión usa Drizzle con `postgres.js`, `prepare: false` y una conexión por instancia para ser compatible con Supabase Transaction Pooler y Vercel.
 
 ## Autenticación y seguridad
 
@@ -45,19 +45,23 @@ Agrega las variables en Project Settings → Environment Variables y despliega n
 
 El manifest usa `start_url: /manage04`, `scope: /manage04/` y modo standalone. El service worker adopta una estrategia network-first para el shell y excluye toda API y JSON sensible. Safari iOS permite instalar desde Compartir → Añadir a pantalla de inicio.
 
-## Sustituir mocks y conectar Postgres
+## PostgreSQL y migraciones
 
-1. Implementa las mismas operaciones exportadas por `lib/manage/repository.ts` con Drizzle.
-2. Crea tablas para contactos, negocios, conversaciones, mensajes, prospectos, leads, cotizaciones, seguimientos, notas, comandos, outreach y actividades.
-3. Cambia el proveedor importado por las rutas y por `app/manage04/page.tsx`.
-4. Ejecuta migraciones primero en staging. No existe seed automático de producción.
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+npm run db:verify
+```
+
+El seed solo crea los ajustes iniciales del agente y nunca inserta clientes ficticios. `db:verify` comprueba las 14 tablas y prueba operaciones reales de persistencia con registros temporales que elimina al finalizar.
 
 ## n8n, WaSender y OpenRouter
 
-`lib/manage/integrations.ts` contiene wrappers exclusivamente de servidor. Configura `N8N_BASE_URL`, `N8N_API_KEY`, `N8N_WEBHOOK_SECRET`, `WASENDER_API_URL`, `WASENDER_API_TOKEN` y `OPENROUTER_API_KEY`. Sin credenciales, la UI continúa en modo demo. El webhook `/api/webhooks/wasender` espera `messages.post` y una firma HMAC SHA-256 en `x-webhook-signature`; adapta el nombre/formato solo después de confirmar la documentación exacta del proveedor.
+`lib/manage/integrations.ts` contiene wrappers exclusivamente de servidor. Configura `N8N_BASE_URL`, `N8N_API_KEY`, `N8N_WEBHOOK_SECRET`, `WASENDER_API_URL`, `WASENDER_API_TOKEN`, `WASENDER_WEBHOOK_SECRET` y `OPENROUTER_API_KEY`. Las integraciones ausentes aparecen como no configuradas. El webhook `/api/webhooks/wasender` consume `body.messages[]`, verifica HMAC SHA-256 desde el body crudo mediante `x-wasender-signature` y evita duplicados por ID externo.
 
 ## Límites deliberados del MVP
 
-- Los cambios demo residen en memoria y no se sincronizan entre instancias serverless.
-- Los botones de integraciones sensibles están preparados visualmente, pero no envían mensajes masivos.
+- El archivo de mock histórico permanece únicamente como referencia demo y no se importa en producción.
+- No existe envío masivo; cada mensaje requiere una conversación y acción humana individual.
 - No se muestra ni se devuelve ningún secreto en Configuración.

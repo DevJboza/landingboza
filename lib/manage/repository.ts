@@ -1,189 +1,631 @@
+import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
+import { getDb } from "@/db";
 import {
   activities,
+  agentCommands,
+  agentSessions,
+  agentSettings,
+  businesses,
+  contacts,
   conversations,
   followups,
   leads,
-  outreach,
+  messages,
+  outreachQueue,
   prospects,
   quotes,
-} from "./mock-data";
+} from "@/db/schema";
 import type {
-  AgentCommand,
   AgentMode,
+  Conversation,
   Followup,
+  Lead,
   LeadStatus,
+  OutreachItem,
   Prospect,
   Quote,
 } from "./types";
+import { sendTextMessage } from "./integrations";
 
-const state = {
-  agentOnline: true,
-  conversations,
-  prospects,
-  leads,
-  quotes,
-  followups,
-  outreach,
-  commands: [] as AgentCommand[],
+export interface ManageRepository {
+  dashboard(): Promise<DashboardState>;
+  conversations(): Promise<Conversation[]>;
+  conversation(id: string): Promise<Conversation | null>;
+  setMode(id: string, mode: AgentMode): Promise<Conversation | null>;
+  sendMessage(id: string, body: string): Promise<unknown>;
+  prospects(): Promise<Prospect[]>;
+  prospect(id: string): Promise<Prospect | null>;
+  createProspect(data: Omit<Prospect, "id">): Promise<Prospect>;
+  updateProspect(id: string, data: Partial<Prospect>): Promise<Prospect | null>;
+  approveOutreach(id: string): Promise<OutreachItem | null>;
+  outreach(): Promise<OutreachItem[]>;
+  leads(): Promise<Lead[]>;
+  updateLead(id: string, stage: LeadStatus): Promise<Lead | null>;
+  quotes(): Promise<Quote[]>;
+  createQuote(data: Omit<Quote, "id">): Promise<Quote>;
+  followups(): Promise<Followup[]>;
+  createFollowup(data: Omit<Followup, "id">): Promise<Followup>;
+  agent(): Promise<AgentState>;
+  setAgent(online: boolean): Promise<AgentState>;
+  updateAgentSettings(data: Record<string, unknown>): Promise<AgentState>;
+}
+export type DashboardState = {
+  metrics: Record<string, number>;
+  activity: number[];
+  activities: { time: string; text: string; detail: string }[];
+  leadFunnel: { name: string; value: number }[];
+  agentOnline: boolean;
 };
-const id = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-export const repository = {
-  dashboard() {
+export type AgentState = {
+  online: boolean;
+  model: string;
+  provider: string;
+  activeSessions: number;
+  messagesProcessed: number;
+  fallbacks: number;
+  humanChats: number;
+  settings: Record<string, string | number | boolean>;
+};
+const iso = (date: Date | string | null | undefined) =>
+  date ? new Date(date).toISOString() : new Date().toISOString();
+const clock = (date: Date | string | null | undefined) =>
+  new Intl.DateTimeFormat("es-CR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Costa_Rica",
+  }).format(date ? new Date(date) : new Date());
+
+export class PostgresManageRepository implements ManageRepository {
+  private db() {
+    return getDb();
+  }
+  async dashboard() {
+    const db = this.db(),
+      today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+    const [active] = await db
+      .select({ value: count() })
+      .from(conversations)
+      .where(eq(conversations.status, "ACTIVE"));
+    const [newProspects] = await db
+      .select({ value: count() })
+      .from(prospects)
+      .where(eq(prospects.status, "NEW"));
+    const [hotLeads] = await db
+      .select({ value: count() })
+      .from(leads)
+      .where(gte(leads.score, 85));
+    const [pendingQuotes] = await db
+      .select({ value: count() })
+      .from(quotes)
+      .where(inArray(quotes.status, ["DRAFT", "SENT", "VIEWED"]));
+    const [todayFollowups] = await db
+      .select({ value: count() })
+      .from(followups)
+      .where(
+        and(
+          gte(followups.scheduledAt, today),
+          inArray(followups.status, ["PENDING", "TODAY"]),
+        ),
+      );
+    const [messageCount] = await db.select({ value: count() }).from(messages);
+    const [humanChats] = await db
+      .select({ value: count() })
+      .from(conversations)
+      .where(eq(conversations.agentMode, "HUMAN"));
+    const [sessions] = await db
+      .select({ value: count() })
+      .from(agentSessions)
+      .where(eq(agentSessions.active, true));
+    const [meetings] = await db
+      .select({ value: count() })
+      .from(leads)
+      .where(eq(leads.stage, "MEETING"));
+    const messageActivity = await db
+      .select({ sentAt: messages.sentAt })
+      .from(messages)
+      .where(gte(messages.sentAt, weekStart));
+    const leadStageRows = await db
+      .select({ stage: leads.stage, value: count() })
+      .from(leads)
+      .groupBy(leads.stage);
+    const activityRows = await db
+      .select()
+      .from(activities)
+      .orderBy(desc(activities.createdAt))
+      .limit(8);
+    const settings = await this.ensureSettings();
     return {
       metrics: {
-        activeConversations: state.conversations.filter(
-          (x) => x.status === "ACTIVE",
-        ).length,
-        newProspects: state.prospects.filter((x) => x.status === "NEW").length,
-        hotLeads: state.leads.filter((x) => x.score >= 85).length,
-        pendingQuotes: state.quotes.filter((x) =>
-          ["DRAFT", "SENT", "VIEWED"].includes(x.status),
-        ).length,
-        todayFollowups: state.followups.filter((x) => x.status === "TODAY")
-          .length,
-        meetings: state.leads.filter((x) => x.stage === "MEETING").length,
-        responseRate: 87,
+        activeConversations: active.value,
+        newProspects: newProspects.value,
+        hotLeads: hotLeads.value,
+        pendingQuotes: pendingQuotes.value,
+        todayFollowups: todayFollowups.value,
+        meetings: meetings.value,
+        responseRate: 0,
+        messagesProcessed: messageCount.value,
+        humanChats: humanChats.value,
+        activeSessions: sessions.value,
       },
-      activity: [18, 25, 21, 36, 30, 46, 41],
-      activities,
-      agentOnline: state.agentOnline,
-    };
-  },
-  conversations() {
-    return state.conversations;
-  },
-  conversation(cid: string) {
-    return state.conversations.find((x) => x.id === cid);
-  },
-  setMode(cid: string, mode: AgentMode) {
-    const c = this.conversation(cid);
-    if (!c) return null;
-    c.agentMode = mode;
-    c.status = mode === "CLOSED" ? "CLOSED" : "ACTIVE";
-    c.unread = 0;
-    return c;
-  },
-  sendMessage(cid: string, body: string) {
-    const c = this.conversation(cid);
-    if (!c) return null;
-    const message = {
-      id: id("msg"),
-      direction: "out" as const,
-      body,
-      at: new Date().toLocaleTimeString("es-CR", {
-        hour: "2-digit",
-        minute: "2-digit",
+      activity: Array.from({ length: 7 }, (_, index) => {
+        const day = new Date(weekStart);
+        day.setDate(day.getDate() + index);
+        return messageActivity.filter((x) => {
+          const d = new Date(x.sentAt);
+          return (
+            d.getFullYear() === day.getFullYear() &&
+            d.getMonth() === day.getMonth() &&
+            d.getDate() === day.getDate()
+          );
+        }).length;
       }),
-      author: "Johan" as const,
+      activities: activityRows.map((x) => ({
+        time: clock(x.createdAt),
+        text: x.title,
+        detail: x.detail,
+      })),
+      leadFunnel: ["NEW", "CONTACTED", "INTERESTED", "QUOTE", "WON"].map(
+        (stage) => ({
+          name:
+            {
+              NEW: "Nuevos",
+              CONTACTED: "Contactados",
+              INTERESTED: "Interesados",
+              QUOTE: "Cotización",
+              WON: "Ganados",
+            }[stage] || stage,
+          value: leadStageRows.find((x) => x.stage === stage)?.value || 0,
+        }),
+      ),
+      agentOnline: settings.agentEnabled,
     };
-    c.messages.push(message);
-    c.lastMessage = body;
-    c.lastMessageAt = message.at;
-    return message;
-  },
-  prospects() {
-    return state.prospects;
-  },
-  prospect(pid: string) {
-    return state.prospects.find((x) => x.id === pid);
-  },
-  createProspect(data: Omit<Prospect, "id">) {
-    const item = { ...data, id: id("pros") };
-    state.prospects.unshift(item);
-    return item;
-  },
-  updateProspect(pid: string, data: Partial<Prospect>) {
-    const item = this.prospect(pid);
-    if (!item) return null;
-    Object.assign(item, data, { id: pid });
-    return item;
-  },
-  approveOutreach(pid: string) {
-    const p = this.prospect(pid);
-    if (!p) return null;
-    let item = state.outreach.find((x) => x.prospectId === pid);
-    if (!item) {
-      item = {
-        id: id("out"),
-        prospectId: pid,
-        prospect: p.business,
-        message: p.suggestedMessage,
-        scheduledAt: null,
-        status: "APPROVED",
-        channel: "WhatsApp",
-      };
-      state.outreach.unshift(item);
-    } else item.status = "APPROVED";
-    return item;
-  },
-  outreach() {
-    return state.outreach;
-  },
-  leads() {
-    return state.leads;
-  },
-  updateLead(lid: string, stage: LeadStatus) {
-    const item = state.leads.find((x) => x.id === lid);
-    if (!item) return null;
-    item.stage = stage;
-    return item;
-  },
-  quotes() {
-    return state.quotes;
-  },
-  createQuote(data: Omit<Quote, "id">) {
-    const item = { ...data, id: id("quote") };
-    state.quotes.unshift(item);
-    return item;
-  },
-  followups() {
-    return state.followups;
-  },
-  createFollowup(data: Omit<Followup, "id">) {
-    const item = { ...data, id: id("follow") };
-    state.followups.unshift(item);
-    return item;
-  },
-  agent() {
+  }
+  async conversationRows() {
+    return this.db()
+      .select({
+        conversation: conversations,
+        contact: contacts,
+        business: businesses,
+      })
+      .from(conversations)
+      .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+      .leftJoin(businesses, eq(conversations.businessId, businesses.id))
+      .orderBy(desc(conversations.lastMessageAt));
+  }
+  async mapConversations(
+    rows: Awaited<ReturnType<PostgresManageRepository["conversationRows"]>>,
+  ) {
+    const db = this.db(),
+      ids = rows.map((x) => x.conversation.id),
+      all = ids.length
+        ? await db
+            .select()
+            .from(messages)
+            .where(inArray(messages.conversationId, ids))
+            .orderBy(messages.sentAt)
+        : [];
+    return rows.map(({ conversation: c, contact, business }): Conversation => ({
+      id: c.id,
+      name: contact?.name || "Sin nombre",
+      business: business?.name || "Sin negocio",
+      phone: contact?.phone || "",
+      status: c.status,
+      agentMode: c.agentMode,
+      unread: c.unreadCount,
+      lastMessage: c.lastMessage,
+      lastMessageAt: clock(c.lastMessageAt),
+      category: business?.category || "",
+      city: business?.city || contact?.city || "",
+      leadStatus: "NEW",
+      score: c.score,
+      interest: c.interest || "",
+      source: c.source || "",
+      objective: c.objective || "",
+      notes: "",
+      messages: all
+        .filter((m) => m.conversationId === c.id)
+        .map((m) => ({
+          id: m.id,
+          direction:
+            m.direction === "INBOUND"
+              ? "in"
+              : m.direction === "OUTBOUND"
+                ? "out"
+                : "system",
+          body: m.body,
+          at: clock(m.sentAt),
+          author:
+            m.senderType === "HUMAN"
+              ? "Johan"
+              : m.senderType === "AGENT"
+                ? "Agente"
+                : m.senderType === "CONTACT"
+                  ? "Cliente"
+                  : "Sistema",
+        })),
+    }));
+  }
+  async conversations() {
+    return this.mapConversations(await this.conversationRows());
+  }
+  async conversation(id: string) {
+    const all = await this.mapConversations(
+      (await this.conversationRows()).filter((x) => x.conversation.id === id),
+    );
+    return all[0] || null;
+  }
+  async setMode(id: string, mode: AgentMode) {
+    const db = this.db();
+    const [row] = await db
+      .update(conversations)
+      .set({
+        agentMode: mode,
+        status: mode === "CLOSED" ? "CLOSED" : "ACTIVE",
+        unreadCount: 0,
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, id))
+      .returning();
+    if (!row) return null;
+    await Promise.all([
+      db.insert(agentCommands).values({
+        action:
+          mode === "HUMAN"
+            ? "take_conversation"
+            : mode === "AUTO"
+              ? "release_conversation"
+              : mode === "PAUSED"
+                ? "pause_agent"
+                : "close_session",
+        target: id,
+      }),
+      db.insert(activities).values({
+        type: "conversation.mode",
+        title: `Conversación cambió a ${mode}`,
+        conversationId: id,
+      }),
+    ]);
+    return this.conversation(id);
+  }
+  async sendMessage(id: string, body: string) {
+    const db = this.db();
+    const [target] = await db
+      .select({ phone: contacts.phone })
+      .from(conversations)
+      .innerJoin(contacts, eq(conversations.contactId, contacts.id))
+      .where(eq(conversations.id, id))
+      .limit(1);
+    if (!target?.phone) throw new Error("Conversation has no phone number");
+    const [message] = await db
+      .insert(messages)
+      .values({
+        conversationId: id,
+        direction: "OUTBOUND",
+        senderType: "HUMAN",
+        body,
+        status: "PENDING",
+      })
+      .returning();
+    let externalId: string | undefined;
+    try {
+      const response = await sendTextMessage(target.phone, body);
+      const data = response.data as Record<string, unknown> | undefined;
+      externalId = data?.msgId ? String(data.msgId) : undefined;
+      await db
+        .update(messages)
+        .set({ status: "SENT", externalId })
+        .where(eq(messages.id, message.id));
+    } catch (error) {
+      await db
+        .update(messages)
+        .set({ status: "FAILED" })
+        .where(eq(messages.id, message.id));
+      await db.insert(activities).values({
+        type: "message.failed",
+        title: "Error al enviar mensaje",
+        conversationId: id,
+      });
+      throw error;
+    }
+    await db
+      .update(conversations)
+      .set({
+        lastMessage: body,
+        lastMessageAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, id));
+    await db.insert(activities).values({
+      type: "message.outbound",
+      title: "Mensaje registrado",
+      conversationId: id,
+      detail: "Mensaje saliente de Johan",
+    });
     return {
-      online: state.agentOnline,
+      id: message.id,
+      direction: "out",
+      body: message.body,
+      at: clock(message.sentAt),
+      author: "Johan",
+      status: "SENT",
+      externalId,
+    };
+  }
+  mapProspect(p: typeof prospects.$inferSelect): Prospect {
+    return {
+      id: p.id,
+      business: p.businessName,
+      category: p.category,
+      city: p.city,
+      phone: p.phone,
+      whatsapp: p.whatsapp,
+      web: p.web,
+      instagram: p.instagram,
+      facebook: p.facebook,
+      score: p.score,
+      opportunity: p.opportunity,
+      status: p.status,
+      lastAction: p.lastAction,
+      problems: p.problems,
+      suggestedMessage: p.suggestedMessage,
+    };
+  }
+  async prospects() {
+    return (
+      await this.db().select().from(prospects).orderBy(desc(prospects.score))
+    ).map((x) => this.mapProspect(x));
+  }
+  async prospect(id: string) {
+    const [row] = await this.db()
+      .select()
+      .from(prospects)
+      .where(eq(prospects.id, id))
+      .limit(1);
+    return row ? this.mapProspect(row) : null;
+  }
+  async createProspect(data: Omit<Prospect, "id">) {
+    const [row] = await this.db()
+      .insert(prospects)
+      .values({ businessName: data.business, ...data })
+      .returning();
+    return this.mapProspect(row);
+  }
+  async updateProspect(id: string, data: Partial<Prospect>) {
+    const values: Partial<typeof prospects.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (data.business !== undefined) values.businessName = data.business;
+    for (const key of [
+      "category",
+      "city",
+      "phone",
+      "whatsapp",
+      "web",
+      "instagram",
+      "facebook",
+      "score",
+      "opportunity",
+      "status",
+      "lastAction",
+      "problems",
+      "suggestedMessage",
+    ] as const)
+      if (data[key] !== undefined) Object.assign(values, { [key]: data[key] });
+    const [row] = await this.db()
+      .update(prospects)
+      .set(values)
+      .where(eq(prospects.id, id))
+      .returning();
+    return row ? this.mapProspect(row) : null;
+  }
+  async approveOutreach(id: string) {
+    const db = this.db(),
+      p = await this.prospect(id);
+    if (!p) return null;
+    const existing = await db
+      .select()
+      .from(outreachQueue)
+      .where(eq(outreachQueue.prospectId, id))
+      .limit(1);
+    const [row] = existing.length
+      ? await db
+          .update(outreachQueue)
+          .set({
+            status: "APPROVED",
+            message: p.suggestedMessage,
+            updatedAt: new Date(),
+          })
+          .where(eq(outreachQueue.id, existing[0].id))
+          .returning()
+      : await db
+          .insert(outreachQueue)
+          .values({
+            prospectId: id,
+            message: p.suggestedMessage,
+            status: "APPROVED",
+          })
+          .returning();
+    await db
+      .update(prospects)
+      .set({ lastAction: "Mensaje aprobado", updatedAt: new Date() })
+      .where(eq(prospects.id, id));
+    return {
+      id: row.id,
+      prospectId: id,
+      prospect: p.business,
+      message: row.message,
+      scheduledAt: row.scheduledAt?.toISOString() || null,
+      status: row.status,
+      channel: row.channel as "WhatsApp" | "Email",
+    };
+  }
+  async outreach() {
+    const rows = await this.db()
+      .select({ queue: outreachQueue, prospect: prospects })
+      .from(outreachQueue)
+      .innerJoin(prospects, eq(outreachQueue.prospectId, prospects.id))
+      .orderBy(desc(outreachQueue.createdAt));
+    return rows.map(({ queue: q, prospect: p }) => ({
+      id: q.id,
+      prospectId: q.prospectId,
+      prospect: p.businessName,
+      message: q.message,
+      scheduledAt: q.scheduledAt?.toISOString() || null,
+      status: q.status,
+      channel: q.channel as "WhatsApp" | "Email",
+    }));
+  }
+  mapLead(l: typeof leads.$inferSelect): Lead {
+    return {
+      id: l.id,
+      business: l.businessName,
+      contact: l.contactName,
+      value: Number(l.estimatedValue),
+      score: l.score,
+      stage: l.stage,
+      lastActivity: iso(l.lastActivityAt),
+    };
+  }
+  async leads() {
+    return (
+      await this.db().select().from(leads).orderBy(desc(leads.lastActivityAt))
+    ).map((x) => this.mapLead(x));
+  }
+  async updateLead(id: string, stage: LeadStatus) {
+    const [row] = await this.db()
+      .update(leads)
+      .set({ stage, lastActivityAt: new Date(), updatedAt: new Date() })
+      .where(eq(leads.id, id))
+      .returning();
+    return row ? this.mapLead(row) : null;
+  }
+  async quotes() {
+    return (
+      await this.db().select().from(quotes).orderBy(desc(quotes.createdAt))
+    ).map((q) => ({
+      id: q.id,
+      client: q.client,
+      business: q.business,
+      service: q.service,
+      scope: q.scope,
+      notes: q.notes,
+      estimatedPrice: Number(q.estimatedPrice),
+      status: q.status,
+    }));
+  }
+  async createQuote(data: Omit<Quote, "id">) {
+    const [q] = await this.db()
+      .insert(quotes)
+      .values({ ...data, estimatedPrice: String(data.estimatedPrice) })
+      .returning();
+    return { ...data, id: q.id };
+  }
+  async followups() {
+    return (
+      await this.db().select().from(followups).orderBy(followups.scheduledAt)
+    ).map((f) => ({
+      id: f.id,
+      client: f.client,
+      reason: f.reason,
+      date: f.scheduledAt.toISOString().slice(0, 10),
+      time: clock(f.scheduledAt),
+      channel: f.channel as Followup["channel"],
+      message: f.message,
+      status: f.status,
+    }));
+  }
+  async createFollowup(data: Omit<Followup, "id">) {
+    const [f] = await this.db()
+      .insert(followups)
+      .values({
+        client: data.client,
+        reason: data.reason,
+        scheduledAt: new Date(`${data.date}T${data.time}:00-06:00`),
+        channel: data.channel,
+        message: data.message,
+        status: data.status,
+      })
+      .returning();
+    return { ...data, id: f.id };
+  }
+  async ensureSettings() {
+    const db = this.db();
+    const [existing] = await db
+      .select()
+      .from(agentSettings)
+      .where(eq(agentSettings.id, "default"));
+    if (existing) return existing;
+    const [created] = await db
+      .insert(agentSettings)
+      .values({ id: "default" })
+      .onConflictDoNothing()
+      .returning();
+    return (
+      created ||
+      (
+        await db
+          .select()
+          .from(agentSettings)
+          .where(eq(agentSettings.id, "default"))
+      )[0]
+    );
+  }
+  async agent() {
+    const db = this.db(),
+      s = await this.ensureSettings();
+    const [sessions] = await db
+      .select({ value: count() })
+      .from(agentSessions)
+      .where(eq(agentSessions.active, true));
+    const [processed] = await db.select({ value: count() }).from(messages);
+    const [humans] = await db
+      .select({ value: count() })
+      .from(conversations)
+      .where(eq(conversations.agentMode, "HUMAN"));
+    return {
+      online: s.agentEnabled,
       model: "OpenRouter",
       provider: "WaSender",
-      activeSessions: state.conversations.filter((x) => x.status === "ACTIVE")
-        .length,
-      messagesProcessed: 1284,
-      fallbacks: 12,
-      humanChats: state.conversations.filter((x) => x.agentMode === "HUMAN")
-        .length,
+      activeSessions: sessions.value,
+      messagesProcessed: processed.value,
+      fallbacks: 0,
+      humanChats: humans.value,
       settings: {
-        closeMinutes: 10,
-        reminderMinutes: 7,
-        autoReply: true,
-        aiFallback: true,
-        afterHours: false,
+        closeMinutes: s.sessionTimeoutMinutes,
+        reminderMinutes: s.reminderMinutes,
+        autoReply: s.autoReply,
+        aiFallback: s.aiFallback,
+        afterHours: s.outOfHoursEnabled,
       },
     };
-  },
-  setAgent(online: boolean) {
-    state.agentOnline = online;
+  }
+  async setAgent(online: boolean) {
+    await this.db()
+      .update(agentSettings)
+      .set({ agentEnabled: online, updatedAt: new Date() })
+      .where(eq(agentSettings.id, "default"));
     return this.agent();
-  },
-  command(
-    action: AgentCommand["action"],
-    target: string,
-    payload: Record<string, unknown> = {},
-  ) {
-    const cmd: AgentCommand = {
-      id: id("cmd"),
-      action,
-      target,
-      payload,
-      status: "pending",
-      source: "dashboard",
-      createdAt: new Date().toISOString(),
+  }
+  async updateAgentSettings(data: Record<string, unknown>) {
+    const allowed = {
+      sessionTimeoutMinutes: data.sessionTimeoutMinutes,
+      reminderMinutes: data.reminderMinutes,
+      autoReply: data.autoReply,
+      aiFallback: data.aiFallback,
+      outOfHoursEnabled: data.outOfHoursEnabled,
     };
-    state.commands.unshift(cmd);
-    return cmd;
-  },
-};
+    const clean = Object.fromEntries(
+      Object.entries(allowed).filter(([, v]) => v !== undefined),
+    );
+    await this.db()
+      .update(agentSettings)
+      .set({ ...clean, updatedAt: new Date() })
+      .where(eq(agentSettings.id, "default"));
+    return this.agent();
+  }
+}
+export const repository: ManageRepository = new PostgresManageRepository();

@@ -445,6 +445,7 @@
   width: 100%;
   height: 100%;
 }
+.real-bars{position:absolute;inset:15px 25px 31px;display:flex;align-items:end;justify-content:space-around;gap:8%}.real-bars i{display:block;flex:1;max-width:35px;min-height:3px;border-radius:5px 5px 0 0;background:linear-gradient(#6ef2bd,#245c49);box-shadow:0 0 18px #6ef2bd22}
 .chart-grid {
   position: absolute;
   inset: 12px 18px 28px;

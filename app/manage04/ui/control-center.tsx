@@ -31,6 +31,7 @@ type DashboardData = {
   metrics: Record<string, number>;
   activity: number[];
   activities: Activity[];
+  leadFunnel: { name: string; value: number }[];
   agentOnline: boolean;
 };
 type AgentData = {
@@ -92,7 +93,9 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     [menu, setMenu] = useState(false),
     [search, setSearch] = useState(""),
     [toast, setToast] = useState(""),
-    [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null),
+    [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(
+      null,
+    ),
     [notifications, setNotifications] = useState(false),
     [palette, setPalette] = useState(false),
     [agent, setAgent] = useState(initial.agent);
@@ -193,7 +196,7 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
             >
               <span>{icon}</span>
               {label}
-              {id === "conversations" && <i>4</i>}
+              {id === "conversations" && initial.conversations.reduce((sum,item)=>sum+item.unread,0)>0 && <i>{initial.conversations.reduce((sum,item)=>sum+item.unread,0)}</i>}
             </button>
           ))}
         </nav>
@@ -267,7 +270,7 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
               onClick={() => setNotifications(!notifications)}
               aria-label="Notificaciones"
             >
-              ♢<i>3</i>
+              ♢
             </button>
             <button
               className="quick"
@@ -337,19 +340,25 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     </div>
   );
 }
-function Dashboard({ data, go }: { data: DashboardData; go: (v: View) => void }) {
+function Dashboard({
+  data,
+  go,
+}: {
+  data: DashboardData;
+  go: (v: View) => void;
+}) {
   const cards = [
-    ["Conversaciones activas", data.metrics.activeConversations, "+12%", "◫"],
-    ["Prospectos nuevos", data.metrics.newProspects, "Esta semana", "◎"],
+    ["Conversaciones activas", data.metrics.activeConversations, "Ahora", "◫"],
+    ["Prospectos nuevos", data.metrics.newProspects, "Registrados", "◎"],
     ["Leads calientes", data.metrics.hotLeads, "Score ≥ 85", "◇"],
     [
       "Cotizaciones pendientes",
       data.metrics.pendingQuotes,
-      "$4.3k pipeline",
+      "Por resolver",
       "▤",
     ],
-    ["Seguimientos de hoy", data.metrics.todayFollowups, "2 próximos", "◷"],
-    ["Tasa de respuesta", `${data.metrics.responseRate}%`, "+4.2%", "↗"],
+    ["Seguimientos de hoy", data.metrics.todayFollowups, "Programados", "◷"],
+    ["Mensajes procesados", data.metrics.messagesProcessed, "Total", "↗"],
   ];
   return (
     <>
@@ -384,24 +393,20 @@ function Dashboard({ data, go }: { data: DashboardData; go: (v: View) => void })
           />
           <div className="chart">
             <div className="chart-grid" />
-            <svg viewBox="0 0 700 200" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#6ef2bd" stopOpacity=".28" />
-                  <stop offset="1" stopColor="#6ef2bd" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M0 170 C60 150 80 105 120 120 S190 155 235 104 S310 58 350 91 S430 126 470 70 S550 35 590 65 S660 80 700 25 L700 200 L0 200Z"
-                fill="url(#fill)"
-              />
-              <path
-                d="M0 170 C60 150 80 105 120 120 S190 155 235 104 S310 58 350 91 S430 126 470 70 S550 35 590 65 S660 80 700 25"
-                fill="none"
-                stroke="#6ef2bd"
-                strokeWidth="3"
-              />
-            </svg>
+            <div className="real-bars">
+              {data.activity.map((value, index) => {
+                const maximum = Math.max(1, ...data.activity);
+                return (
+                  <i
+                    key={index}
+                    style={{
+                      height: `${Math.max(3, (value / maximum) * 100)}%`,
+                    }}
+                    title={`${value} mensajes`}
+                  />
+                );
+              })}
+            </div>
             <div className="chart-labels">
               <span>Lun</span>
               <span>Mar</span>
@@ -416,25 +421,28 @@ function Dashboard({ data, go }: { data: DashboardData; go: (v: View) => void })
         <article className="panel funnel">
           <PanelHead title="Embudo de leads" subtitle="Conversión actual" />
           <div className="funnel-list">
-            {[
-              ["Nuevos", 18, 100],
-              ["Contactados", 14, 78],
-              ["Interesados", 9, 50],
-              ["Cotización", 5, 28],
-              ["Ganados", 3, 17],
-            ].map(([n, v, w], i) => (
-              <div key={String(n)}>
-                <span>{n}</span>
-                <div>
-                  <i style={{ width: `${w}%` }} className={`f${i}`} />
+            {data.leadFunnel.map((item, i) => {
+              const maximum = Math.max(
+                1,
+                ...data.leadFunnel.map((x) => x.value),
+              );
+              return (
+                <div key={item.name}>
+                  <span>{item.name}</span>
+                  <div>
+                    <i
+                      style={{ width: `${(item.value / maximum) * 100}%` }}
+                      className={`f${i}`}
+                    />
+                  </div>
+                  <b>{item.value}</b>
                 </div>
-                <b>{v}</b>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <p className="conversion">
-            <b>16.7%</b>
-            <span>Conversión total</span>
+            <b>{data.leadFunnel.at(-1)?.value || 0}</b>
+            <span>Leads ganados</span>
           </p>
         </article>
         <article className="panel recent">
@@ -463,7 +471,7 @@ function Dashboard({ data, go }: { data: DashboardData; go: (v: View) => void })
           <div>
             <small>AGENTE BOZA</small>
             <h3>{data.agentOnline ? "Operando normalmente" : "En pausa"}</h3>
-            <p>1284 mensajes procesados este mes</p>
+            <p>{data.metrics.messagesProcessed} mensajes procesados</p>
           </div>
           <span className="live-pill">
             <i /> EN VIVO
@@ -492,7 +500,21 @@ function PanelHead({
     </header>
   );
 }
-function Conversations({
+function Conversations(props: {
+  initial: Conversation[];
+  notify: (s: string) => void;
+}) {
+  if (!props.initial.length)
+    return (
+      <div className="empty">
+        <span>◫</span>
+        <b>No hay conversaciones todavía</b>
+        <small>Las conversaciones entrantes de WaSender aparecerán aquí.</small>
+      </div>
+    );
+  return <ConversationInbox {...props} />;
+}
+function ConversationInbox({
   initial,
   notify,
 }: {
@@ -1141,6 +1163,26 @@ function Followups({
   );
 }
 function Agent({ data, toggle }: { data: AgentData; toggle: () => void }) {
+  const [settings, setSettings] = useState({
+    sessionTimeoutMinutes: Number(data.settings.closeMinutes),
+    reminderMinutes: Number(data.settings.reminderMinutes),
+    autoReply: Boolean(data.settings.autoReply),
+    aiFallback: Boolean(data.settings.aiFallback),
+    outOfHoursEnabled: Boolean(data.settings.afterHours),
+  });
+  async function save(patch: Partial<typeof settings>) {
+    const updated = await api("agent/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ ...settings, ...patch }),
+    });
+    setSettings({
+      sessionTimeoutMinutes: updated.settings.closeMinutes,
+      reminderMinutes: updated.settings.reminderMinutes,
+      autoReply: updated.settings.autoReply,
+      aiFallback: updated.settings.aiFallback,
+      outOfHoursEnabled: updated.settings.afterHours,
+    });
+  }
   return (
     <>
       <div className="module-head">
@@ -1197,11 +1239,34 @@ function Agent({ data, toggle }: { data: AgentData; toggle: () => void }) {
             title="Comportamiento"
             subtitle="Configuración preparada para sincronizar"
           />
-          <Setting name="Tiempo de cierre" value="10 min" />
-          <Setting name="Recordatorio" value="7 min" />
-          <Setting name="Auto responder" toggle />
-          <Setting name="Fallback IA" toggle />
-          <Setting name="Modo fuera de horario" toggle off />
+          <Setting
+            name="Tiempo de cierre"
+            value={`${settings.sessionTimeoutMinutes} min`}
+          />
+          <Setting
+            name="Recordatorio"
+            value={`${settings.reminderMinutes} min`}
+          />
+          <Setting
+            name="Auto responder"
+            toggle
+            enabled={settings.autoReply}
+            onToggle={() => save({ autoReply: !settings.autoReply })}
+          />
+          <Setting
+            name="Fallback IA"
+            toggle
+            enabled={settings.aiFallback}
+            onToggle={() => save({ aiFallback: !settings.aiFallback })}
+          />
+          <Setting
+            name="Modo fuera de horario"
+            toggle
+            enabled={settings.outOfHoursEnabled}
+            onToggle={() =>
+              save({ outOfHoursEnabled: !settings.outOfHoursEnabled })
+            }
+          />
         </article>
         <article className="panel danger-zone">
           <PanelHead
@@ -1273,6 +1338,20 @@ function Automations() {
   );
 }
 function Settings() {
+  const [health, setHealth] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api("system/health")
+      .then(setHealth)
+      .catch(() => setHealth({ database: "error" }));
+  }, []);
+  const status = (key: string, fallback: string) =>
+    health[key]
+      ? health[key]
+          .replace("unconfigured", "No configurado")
+          .replace("configured", "Configurado")
+          .replace("connected", "Conectado")
+          .replace("error", "Error")
+      : fallback;
   return (
     <>
       <div className="module-head">
@@ -1286,15 +1365,23 @@ function Settings() {
         {[
           ["General", "Identidad, zona horaria y preferencias", "Configurado"],
           ["Agente", "Modelo y comportamiento automático", "Configurado"],
-          ["WhatsApp", "Proveedor WaSender y sesión", "No configurado"],
+          [
+            "WhatsApp",
+            "Proveedor WaSender y sesión",
+            status("wasender", "Comprobando"),
+          ],
           [
             "OpenRouter",
             "Proveedor de inteligencia artificial",
-            "No configurado",
+            status("openrouter", "Comprobando"),
           ],
-          ["n8n", "Workflows y webhooks", "No configurado"],
+          ["n8n", "Workflows y webhooks", status("n8n", "Comprobando")],
           ["Seguridad", "Sesión, contraseña y acceso", "Configurado"],
-          ["PWA", "Instalación y experiencia móvil", "Disponible"],
+          [
+            "PWA",
+            `Instalación · Base de datos ${status("database", "comprobando")}`,
+            "Disponible",
+          ],
         ].map((x, i) => (
           <article key={x[0]}>
             <span>{["⚙", "✦", "◫", "◇", "⌁", "▣", "▱"][i]}</span>
@@ -1355,18 +1442,24 @@ function Setting({
   name,
   value,
   toggle,
-  off,
+  enabled,
+  onToggle,
 }: {
   name: string;
   value?: string;
   toggle?: boolean;
-  off?: boolean;
+  enabled?: boolean;
+  onToggle?: () => void;
 }) {
   return (
     <div className="setting">
       <span>{name}</span>
       {toggle ? (
-        <button className={off ? "switch" : "switch on"}>
+        <button
+          onClick={onToggle}
+          className={enabled ? "switch on" : "switch"}
+          aria-pressed={enabled}
+        >
           <i />
         </button>
       ) : (
@@ -1382,19 +1475,12 @@ function Notifications() {
         <b>Notificaciones</b>
         <button>Marcar leídas</button>
       </header>
-      {[
-        ["Nuevo lead", "Clínica Sonrisa · hace 12 min"],
-        ["Cliente respondió", "Farmacia Central · hace 8 min"],
-        ["Agente necesita humano", "Consulta fuera de alcance · hace 26 min"],
-      ].map((x) => (
-        <div key={x[0]}>
-          <i />
-          <p>
-            <b>{x[0]}</b>
-            <small>{x[1]}</small>
-          </p>
-        </div>
-      ))}
+      <div>
+        <p>
+          <b>No hay notificaciones nuevas</b>
+          <small>Los eventos reales aparecerán aquí.</small>
+        </p>
+      </div>
     </div>
   );
 }

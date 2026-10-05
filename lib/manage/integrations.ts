@@ -40,21 +40,24 @@ export async function getAgentStatus() {
     headers: { Authorization: `Bearer ${key}` },
   });
 }
-export async function sendTextMessage(target: string, message: string) {
-  const url = process.env.WASENDER_API_URL,
+export async function sendTextMessage(phone: string, text: string) {
+  const url = process.env.WASENDER_API_URL || "https://api.wasender.dev",
     token = process.env.WASENDER_API_TOKEN;
-  if (!url || !token) throw new Error("WaSender is not configured");
-  return serverRequest(`${url.replace(/\/$/, "")}/messages`, {
+  if (!token) throw new Error("WaSender is not configured");
+  return serverRequest(`${url.replace(/\/$/, "")}/api/send-message`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ target, message }),
+    body: JSON.stringify({ to: phone, text }),
   });
 }
-export async function getSessionStatus() {
-  const url = process.env.WASENDER_API_URL,
+export async function getWhatsAppStatus() {
+  const url = process.env.WASENDER_API_URL || "https://api.wasender.dev",
     token = process.env.WASENDER_API_TOKEN;
-  if (!url || !token) return { configured: false };
-  return serverRequest(`${url.replace(/\/$/, "")}/session`, {
+  if (!token) return { configured: false };
+  return serverRequest(`${url.replace(/\/$/, "")}/api/status`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+}
+export async function checkOpenRouter() {
+  return { configured: Boolean(process.env.OPENROUTER_API_KEY) };
 }
