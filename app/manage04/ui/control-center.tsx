@@ -105,7 +105,10 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
     [palette, setPalette] = useState(false),
     [agent, setAgent] = useState(initial.agent);
   useEffect(() => {
-    navigator.serviceWorker?.register("/manage04/sw.js");
+    navigator.serviceWorker
+      ?.register("/manage04/sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => undefined);
     const handler = (event: Event) => {
       const e = event as InstallPromptEvent;
       e.preventDefault();
