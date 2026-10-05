@@ -4,7 +4,6 @@ import {
   FormEvent,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import type {
@@ -601,65 +600,20 @@ function ConversationInbox({
     [info, setInfo] = useState(false),
     [mobileChat, setMobileChat] = useState(false);
   const current = list.find((x) => x.id === selected) || list[0];
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(
-    () => end.current?.scrollIntoView({ behavior: "smooth" }),
-    [current.messages.length],
-  );
   useEffect(() => {
     let active = true;
     async function refresh() {
       try {
-        const detail = (await api(`conversations/${selected}`)) as {
-          conversation: Conversation;
-          messages: Array<{
-            id: string;
-            direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
-            senderType: "CONTACT" | "CUSTOMER" | "AGENT" | "HUMAN" | "SYSTEM";
-            text: string;
-            createdAt: string;
-          }>;
-        };
-        if (!active) return;
-        const freshMessages = detail.messages.map((message) => ({
-          id: message.id,
-          direction:
-            message.direction === "INBOUND"
-              ? ("in" as const)
-              : message.direction === "OUTBOUND"
-                ? ("out" as const)
-                : ("system" as const),
-          body: message.text,
-          at: new Intl.DateTimeFormat("es-CR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: "America/Costa_Rica",
-          }).format(new Date(message.createdAt)),
-          author:
-            message.senderType === "HUMAN"
-              ? ("Johan" as const)
-              : message.senderType === "AGENT"
-                ? ("Agente" as const)
-                : message.senderType === "SYSTEM"
-                  ? ("Sistema" as const)
-                  : ("Cliente" as const),
-        }));
-        setList((previous) =>
-          previous.map((item) =>
-            item.id === selected
-              ? { ...item, ...detail.conversation, messages: freshMessages }
-              : item,
-          ),
-        );
+        const fresh = (await api("conversations")) as Conversation[];
+        if (active && fresh.length) setList(fresh);
       } catch {}
     }
-    void refresh();
     const timer = setInterval(refresh, 4000);
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [selected]);
+  }, []);
   const shown = list.filter(
     (x) =>
       (filter === "Todas" ||
@@ -812,7 +766,6 @@ function ConversationInbox({
               </time>
             </div>
           ))}
-          <div ref={end} />
         </div>
         <form className="composer" onSubmit={send}>
           <button type="button">＋</button>

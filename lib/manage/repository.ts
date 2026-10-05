@@ -262,7 +262,7 @@ export class PostgresManageRepository implements ManageRepository {
     }));
   }
   async conversations() {
-    return this.mapConversations(await this.conversationRows());
+    return this.mapConversations(await this.conversationRows(), true);
   }
   async conversation(id: string) {
     return this.getConversationById(id);
