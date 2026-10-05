@@ -36,6 +36,7 @@ export const messageStatusEnum = pgEnum("message_status", [
 ]);
 export const senderTypeEnum = pgEnum("sender_type", [
   "CONTACT",
+  "CUSTOMER",
   "AGENT",
   "HUMAN",
   "SYSTEM",
@@ -121,6 +122,7 @@ export const conversations = pgTable("conversations", {
   businessId: uuid("business_id").references(() => businesses.id, {
     onDelete: "set null",
   }),
+  externalChatId: text("external_chat_id").unique(),
   status: conversationStatusEnum("status").default("NEW").notNull(),
   agentMode: agentModeEnum("agent_mode").default("AUTO").notNull(),
   unreadCount: integer("unread_count").default(0).notNull(),

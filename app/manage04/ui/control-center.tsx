@@ -82,6 +82,7 @@ const stageNames: Record<string, string> = {
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(`/api/manage/${path}`, {
     ...init,
+    cache: "no-store",
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
   const body = await res.json();
@@ -567,7 +568,22 @@ function Conversations(props: {
   initial: Conversation[];
   notify: (s: string) => void;
 }) {
-  if (!props.initial.length)
+  const [conversations, setConversations] = useState(props.initial);
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      try {
+        const fresh = (await api("conversations")) as Conversation[];
+        if (active) setConversations(fresh);
+      } catch {}
+    }
+    const timer = setInterval(refresh, 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+  if (!conversations.length)
     return (
       <div className="empty">
         <span>◫</span>
@@ -575,7 +591,7 @@ function Conversations(props: {
         <small>Las conversaciones entrantes de WaSender aparecerán aquí.</small>
       </div>
     );
-  return <ConversationInbox {...props} />;
+  return <ConversationInbox initial={conversations} notify={props.notify} />;
 }
 function ConversationInbox({
   initial,
@@ -592,10 +608,86 @@ function ConversationInbox({
     [mobileChat, setMobileChat] = useState(false);
   const current = list.find((x) => x.id === selected)!;
   const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let active = true;
+    async function refreshList() {
+      try {
+        const fresh = (await api("conversations")) as Conversation[];
+        if (!active) return;
+        setList((previous) =>
+          fresh.map((conversation) => ({
+            ...conversation,
+            messages:
+              previous.find((item) => item.id === conversation.id)?.messages ||
+              [],
+          })),
+        );
+      } catch {}
+    }
+    const timer = setInterval(refreshList, 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
   useEffect(
     () => end.current?.scrollIntoView({ behavior: "smooth" }),
     [current.messages.length],
   );
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      try {
+        const detail = (await api(`conversations/${selected}`)) as {
+          conversation: Conversation;
+          messages: Array<{
+            id: string;
+            direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
+            senderType: "CONTACT" | "CUSTOMER" | "AGENT" | "HUMAN" | "SYSTEM";
+            text: string;
+            createdAt: string;
+          }>;
+        };
+        if (!active) return;
+        const freshMessages = detail.messages.map((message) => ({
+          id: message.id,
+          direction:
+            message.direction === "INBOUND"
+              ? ("in" as const)
+              : message.direction === "OUTBOUND"
+                ? ("out" as const)
+                : ("system" as const),
+          body: message.text,
+          at: new Intl.DateTimeFormat("es-CR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "America/Costa_Rica",
+          }).format(new Date(message.createdAt)),
+          author:
+            message.senderType === "HUMAN"
+              ? ("Johan" as const)
+              : message.senderType === "AGENT"
+                ? ("Agente" as const)
+                : message.senderType === "SYSTEM"
+                  ? ("Sistema" as const)
+                  : ("Cliente" as const),
+        }));
+        setList((previous) =>
+          previous.map((item) =>
+            item.id === selected
+              ? { ...item, ...detail.conversation, messages: freshMessages }
+              : item,
+          ),
+        );
+      } catch {}
+    }
+    void refresh();
+    const timer = setInterval(refresh, 4000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selected]);
   const shown = list.filter(
     (x) =>
       (filter === "Todas" ||

@@ -51,12 +51,18 @@ export async function GET(_: Request, context: Context) {
   if (denied) return denied;
   const p = (await context.params).path;
   if (p[0] === "dashboard") return ok(await repository.dashboard());
-  if (p[0] === "conversations")
-    return ok(
-      p[1]
-        ? await repository.conversation(p[1])
-        : await repository.conversations(),
-    );
+  if (p[0] === "conversations") {
+    if (!p[1]) return ok(await repository.conversations());
+    const conversation = await repository.getConversationById(p[1]);
+    if (!conversation)
+      return fail("NOT_FOUND", "ConversaciÃ³n no encontrada", 404);
+    const messages = await repository.getMessagesByConversationId(p[1]);
+    console.info("[API] conversation messages returned", {
+      conversationId: p[1],
+      count: messages.length,
+    });
+    return ok({ conversation, messages });
+  }
   if (p[0] === "prospects")
     return ok(
       p[1] ? await repository.prospect(p[1]) : await repository.prospects(),
@@ -79,6 +85,9 @@ export async function GET(_: Request, context: Context) {
     return ok({
       database,
       wasender,
+      wasenderWebhook: process.env.WASENDER_WEBHOOK_SECRET
+        ? "configured"
+        : "unconfigured",
       n8n:
         process.env.N8N_BASE_URL && process.env.N8N_API_KEY
           ? "configured"

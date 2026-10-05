@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { activities, contacts, conversations, messages } from "@/db/schema";
@@ -11,7 +11,7 @@ const item = z.object({
   type: z.string().optional(),
   chat_id: z.union([z.string(), z.number()]).optional(),
   from_me: z.boolean().default(false),
-  timestamp: z.union([z.number(), z.string()]),
+  timestamp: z.union([z.number(), z.string()]).optional(),
   status: z.string().optional(),
   from: z.string().optional(),
   phone: z.string().optional(),
@@ -27,6 +27,19 @@ function safeSignature(raw: string, given: string, secret: string) {
   const a = Buffer.from(normalized),
     b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/@.*$/, "").replace(/\D/g, "");
+}
+
+function messageDate(value?: string | number) {
+  if (value === undefined) return new Date();
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return new Date();
+  const milliseconds = numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  const date = new Date(milliseconds);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
 export async function POST(request: Request) {
@@ -48,6 +61,10 @@ export async function POST(request: Request) {
   let accepted = 0,
     duplicates = 0;
   for (const event of parsed.data.body.messages) {
+    console.info("[WaSender webhook] message received", {
+      externalId: event.id,
+      direction: event.from_me ? "OUTBOUND" : "INBOUND",
+    });
     const existing = await db
       .select({ id: messages.id })
       .from(messages)
@@ -57,7 +74,7 @@ export async function POST(request: Request) {
       duplicates++;
       continue;
     }
-    const phone = event.phone || event.from;
+    const phone = normalizePhone(event.phone || event.from || "");
     if (!phone) continue;
     await db
       .insert(contacts)
@@ -68,31 +85,50 @@ export async function POST(request: Request) {
       .from(contacts)
       .where(eq(contacts.phone, phone))
       .limit(1);
+    console.info("[DB] contact found/created", { contactId: contact.id });
+    const externalChatId = event.chat_id ? String(event.chat_id) : null;
     let [conversation] = await db
       .select()
       .from(conversations)
-      .where(eq(conversations.contactId, contact.id))
+      .where(
+        externalChatId
+          ? or(
+              eq(conversations.externalChatId, externalChatId),
+              eq(conversations.contactId, contact.id),
+            )
+          : eq(conversations.contactId, contact.id),
+      )
       .limit(1);
     if (!conversation) {
       [conversation] = await db
         .insert(conversations)
         .values({
           contactId: contact.id,
+          externalChatId,
           status: "ACTIVE",
           agentMode: "AUTO",
           lastMessage: event.text.body,
-          lastMessageAt: new Date(Number(event.timestamp) * 1000),
+          lastMessageAt: messageDate(event.timestamp),
         })
         .returning();
+    } else if (externalChatId && conversation.externalChatId !== externalChatId) {
+      [conversation] = await db
+        .update(conversations)
+        .set({ externalChatId, updatedAt: new Date() })
+        .where(eq(conversations.id, conversation.id))
+        .returning();
     }
-    const sentAt = new Date(Number(event.timestamp) * 1000);
-    await db
+    console.info("[DB] conversation found/created", {
+      conversationId: conversation.id,
+    });
+    const sentAt = messageDate(event.timestamp);
+    const inserted = await db
       .insert(messages)
       .values({
         conversationId: conversation.id,
         externalId: event.id,
         direction: event.from_me ? "OUTBOUND" : "INBOUND",
-        senderType: event.from_me ? "AGENT" : "CONTACT",
+        senderType: event.from_me ? "AGENT" : "CUSTOMER",
         body: event.text.body,
         status:
           event.status === "read"
@@ -102,7 +138,16 @@ export async function POST(request: Request) {
               : "SENT",
         sentAt,
       })
-      .onConflictDoNothing({ target: messages.externalId });
+      .onConflictDoNothing({ target: messages.externalId })
+      .returning({ id: messages.id });
+    if (!inserted.length) {
+      duplicates++;
+      continue;
+    }
+    console.info("[DB] message inserted", {
+      messageId: inserted[0].id,
+      conversationId: conversation.id,
+    });
     await db
       .update(conversations)
       .set({

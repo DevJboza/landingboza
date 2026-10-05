@@ -8,6 +8,13 @@
       "when": 1791237634106,
       "tag": "0000_dashing_vision",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791240879017,
+      "tag": "0001_dizzy_the_captain",
+      "breakpoints": true
     }
   ]
 }

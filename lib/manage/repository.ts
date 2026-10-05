@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   activities,
@@ -31,6 +31,8 @@ export interface ManageRepository {
   dashboard(): Promise<DashboardState>;
   conversations(): Promise<Conversation[]>;
   conversation(id: string): Promise<Conversation | null>;
+  getConversationById(id: string): Promise<Conversation | null>;
+  getMessagesByConversationId(id: string): Promise<ConversationMessage[]>;
   setMode(id: string, mode: AgentMode): Promise<Conversation | null>;
   sendMessage(id: string, body: string): Promise<unknown>;
   prospects(): Promise<Prospect[]>;
@@ -49,6 +51,15 @@ export interface ManageRepository {
   setAgent(online: boolean): Promise<AgentState>;
   updateAgentSettings(data: Record<string, unknown>): Promise<AgentState>;
 }
+export type ConversationMessage = {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
+  senderType: "CONTACT" | "CUSTOMER" | "AGENT" | "HUMAN" | "SYSTEM";
+  text: string;
+  createdAt: string;
+  externalId: string | null;
+  status: string;
+};
 export type DashboardState = {
   metrics: Record<string, number>;
   activity: number[];
@@ -198,15 +209,16 @@ export class PostgresManageRepository implements ManageRepository {
   }
   async mapConversations(
     rows: Awaited<ReturnType<PostgresManageRepository["conversationRows"]>>,
+    includeMessages = false,
   ) {
     const db = this.db(),
       ids = rows.map((x) => x.conversation.id),
-      all = ids.length
+      all = includeMessages && ids.length
         ? await db
             .select()
             .from(messages)
             .where(inArray(messages.conversationId, ids))
-            .orderBy(messages.sentAt)
+            .orderBy(asc(messages.createdAt))
         : [];
     return rows.map(({ conversation: c, contact, business }): Conversation => ({
       id: c.id,
@@ -243,7 +255,7 @@ export class PostgresManageRepository implements ManageRepository {
               ? "Johan"
               : m.senderType === "AGENT"
                 ? "Agente"
-                : m.senderType === "CONTACT"
+                : m.senderType === "CONTACT" || m.senderType === "CUSTOMER"
                   ? "Cliente"
                   : "Sistema",
         })),
@@ -253,10 +265,30 @@ export class PostgresManageRepository implements ManageRepository {
     return this.mapConversations(await this.conversationRows());
   }
   async conversation(id: string) {
+    return this.getConversationById(id);
+  }
+  async getConversationById(id: string) {
     const all = await this.mapConversations(
       (await this.conversationRows()).filter((x) => x.conversation.id === id),
+      true,
     );
     return all[0] || null;
+  }
+  async getMessagesByConversationId(id: string): Promise<ConversationMessage[]> {
+    const rows = await this.db()
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, id))
+      .orderBy(asc(messages.createdAt));
+    return rows.map((message) => ({
+      id: message.id,
+      direction: message.direction,
+      senderType: message.senderType,
+      text: message.body,
+      createdAt: message.createdAt.toISOString(),
+      externalId: message.externalId,
+      status: message.status,
+    }));
   }
   async setMode(id: string, mode: AgentMode) {
     const db = this.db();
