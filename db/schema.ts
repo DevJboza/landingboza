@@ -15,6 +15,8 @@ export const agentModeEnum = pgEnum("agent_mode", [
   "HUMAN",
   "PAUSED",
   "CLOSED",
+  "IGNORE",
+  "KEYWORD_ONLY",
 ]);
 export const conversationStatusEnum = pgEnum("conversation_status", [
   "NEW",
@@ -142,6 +144,7 @@ export const messages = pgTable("messages", {
     .notNull()
     .references(() => conversations.id, { onDelete: "cascade" }),
   externalId: text("external_id").unique(),
+  requestId: text("request_id").unique(),
   direction: messageDirectionEnum("direction").notNull(),
   senderType: senderTypeEnum("sender_type").notNull(),
   body: text("body").notNull(),

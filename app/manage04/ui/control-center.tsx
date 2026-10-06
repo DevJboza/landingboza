@@ -581,7 +581,7 @@ function Conversations(props: {
       <div className="empty">
         <span>◫</span>
         <b>No hay conversaciones todavía</b>
-        <small>Las conversaciones entrantes de WaSender aparecerán aquí.</small>
+        <small>Las conversaciones entrantes de GREEN-API aparecerán aquí.</small>
       </div>
     );
   return <ConversationInbox {...props} />;
@@ -598,7 +598,8 @@ function ConversationInbox({
     [filter, setFilter] = useState("Todas"),
     [query, setQuery] = useState(""),
     [info, setInfo] = useState(false),
-    [mobileChat, setMobileChat] = useState(false);
+    [mobileChat, setMobileChat] = useState(false),
+    [sending, setSending] = useState(false);
   const current = list.find((x) => x.id === selected) || list[0];
   useEffect(() => {
     let active = true;
@@ -634,22 +635,28 @@ function ConversationInbox({
   }
   async function send(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (sending) return;
     const form = e.currentTarget;
     const body = String(new FormData(form).get("message") || "").trim();
     if (!body) return;
-    const msg = await api(`conversations/${current.id}/message`, {
-      method: "POST",
-      body: JSON.stringify({ body }),
-    });
-    setList((x) =>
-      x.map((c) =>
-        c.id === current.id
-          ? { ...c, messages: [...c.messages, msg], lastMessage: body }
-          : c,
-      ),
-    );
-    form.reset();
-    notify("Mensaje enviado");
+    setSending(true);
+    try {
+      const msg = await api(`conversations/${current.id}/message`, {
+        method: "POST",
+        body: JSON.stringify({ body, requestId: crypto.randomUUID() }),
+      });
+      setList((x) =>
+        x.map((c) =>
+          c.id === current.id
+            ? { ...c, messages: [...c.messages, msg], lastMessage: body }
+            : c,
+        ),
+      );
+      form.reset();
+      notify("Mensaje enviado");
+    } finally {
+      setSending(false);
+    }
   }
   return (
     <div className={mobileChat ? "inbox mobile-chat-open" : "inbox"}>
@@ -779,8 +786,11 @@ function ConversationInbox({
             }
             disabled={current.agentMode === "CLOSED"}
           />
-          <button type="submit" disabled={current.agentMode === "CLOSED"}>
-            Enviar ↑
+          <button
+            type="submit"
+            disabled={current.agentMode === "CLOSED" || sending}
+          >
+            {sending ? "Enviando…" : "Enviar ↑"}
           </button>
         </form>
       </section>
@@ -1418,20 +1428,32 @@ function Automations() {
   );
 }
 function Settings() {
-  const [health, setHealth] = useState<Record<string, string>>({});
+  const [health, setHealth] = useState<Record<string, unknown>>({});
   useEffect(() => {
     api("system/health")
       .then(setHealth)
       .catch(() => setHealth({ database: "error" }));
   }, []);
   const status = (key: string, fallback: string) =>
-    health[key]
+    typeof health[key] === "string"
       ? health[key]
           .replace("unconfigured", "No configurado")
           .replace("configured", "Configurado")
           .replace("connected", "Conectado")
           .replace("error", "Error")
       : fallback;
+  const whatsapp = health.whatsapp as
+    | { provider?: string; configured?: boolean; status?: string }
+    | undefined;
+  const whatsappStatus = !whatsapp
+    ? "Comprobando"
+    : !whatsapp.configured
+      ? "No configurado"
+      : whatsapp.status === "authorized"
+        ? "Conectado"
+        : whatsapp.status === "error"
+          ? "Error"
+          : whatsapp.status || "Configurado";
   return (
     <>
       <div className="module-head">
@@ -1447,8 +1469,8 @@ function Settings() {
           ["Agente", "Modelo y comportamiento automático", "Configurado"],
           [
             "WhatsApp",
-            "Proveedor WaSender y sesión",
-            status("wasender", "Comprobando"),
+            "Proveedor GREEN-API · Instancia 710722757947",
+            whatsappStatus,
           ],
           [
             "OpenRouter",

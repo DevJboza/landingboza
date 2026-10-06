@@ -48,7 +48,7 @@ export default async function ManagePage() {
         agent: {
           online: false,
           model: "OpenRouter",
-          provider: "WaSender",
+          provider: "GREEN-API",
           activeSessions: 0,
           messagesProcessed: 0,
           fallbacks: 0,

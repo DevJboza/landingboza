@@ -1,13 +1,16 @@
 import { z } from "zod";
 import { checkDatabase } from "@/db";
 import { fail, ok, requireApiSession, validOrigin } from "@/lib/manage/api";
-import { getWhatsAppStatus } from "@/lib/manage/integrations";
 import { repository } from "@/lib/manage/repository";
+import { getWhatsAppProvider, greenApiConfiguration } from "@/lib/manage/whatsapp";
 import type { AgentMode, LeadStatus } from "@/lib/manage/types";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ path: string[] }> };
-const bodySchema = z.object({ body: z.string().trim().min(1).max(4000) });
+const bodySchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  requestId: z.string().uuid().optional(),
+});
 const prospectSchema = z.object({
   business: z.string().min(2),
   category: z.string(),
@@ -78,18 +81,14 @@ export async function GET(_: Request, context: Context) {
     try {
       if (await checkDatabase()) database = "connected";
     } catch {}
-    let wasender: "configured" | "unconfigured" | "error" = process.env.WASENDER_API_TOKEN ? "configured" : "unconfigured";
-    if (wasender === "configured") {
-      try { await getWhatsAppStatus(); } catch { wasender = "error"; }
-    }
+    const whatsapp = await getWhatsAppProvider().getStatus();
+    const greenApi = greenApiConfiguration();
     return ok({
       database,
-      wasender,
-      wasenderWebhook: process.env.WASENDER_WEBHOOK_SECRET
-        ? "configured"
-        : "unconfigured",
+      whatsapp,
+      greenApi: { ...greenApi, status: whatsapp.status },
       n8n:
-        process.env.N8N_BASE_URL && process.env.N8N_API_KEY
+        process.env.N8N_AGENT_WEBHOOK_URL
           ? "configured"
           : "unconfigured",
       openrouter: process.env.OPENROUTER_API_KEY
@@ -112,7 +111,13 @@ export async function POST(request: Request, context: Context) {
     if (!parsed.success)
       return fail("INVALID_PAYLOAD", "Mensaje inválido", 400);
     try {
-      return ok(await repository.sendMessage(p[1], parsed.data.body));
+      return ok(
+        await repository.sendMessage(
+          p[1],
+          parsed.data.body,
+          parsed.data.requestId,
+        ),
+      );
     } catch {
       return fail("MESSAGE_FAILED", "No fue posible enviar el mensaje", 502);
     }

@@ -15,7 +15,7 @@ export function getDb() {
       prepare: false,
       max: 1,
       idle_timeout: 20,
-      connect_timeout: 8,
+      connect_timeout: 15,
       max_lifetime: 60,
       ssl: "require",
     });
@@ -26,7 +26,7 @@ export async function checkDatabase() {
   const client = postgres(connectionString(), {
     prepare: false,
     max: 1,
-    connect_timeout: 8,
+    connect_timeout: 15,
     ssl: "require",
   });
   try {

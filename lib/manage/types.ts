@@ -1,4 +1,10 @@
-export type AgentMode = "AUTO" | "HUMAN" | "PAUSED" | "CLOSED";
+export type AgentMode =
+  | "AUTO"
+  | "HUMAN"
+  | "PAUSED"
+  | "CLOSED"
+  | "IGNORE"
+  | "KEYWORD_ONLY";
 export type LeadStatus =
   | "NEW"
   | "CONTACTED"

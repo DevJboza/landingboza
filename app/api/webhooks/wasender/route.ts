@@ -75,6 +75,8 @@ function messageDate(value?: string | number) {
 }
 
 export async function POST(request: Request) {
+  if (process.env.WHATSAPP_PROVIDER !== "WASENDER")
+    return fail("PROVIDER_DISABLED", "Proveedor deshabilitado", 410);
   const secret = await webhookSecret();
   if (!secret) return fail("NOT_CONFIGURED", "Webhook no configurado", 503);
   const raw = await request.text();

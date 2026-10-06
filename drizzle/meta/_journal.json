@@ -15,6 +15,20 @@
       "when": 1791240879017,
       "tag": "0001_dizzy_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791304461219,
+      "tag": "0002_conscious_lady_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791304691493,
+      "tag": "0003_flat_pepper_potts",
+      "breakpoints": true
     }
   ]
 }

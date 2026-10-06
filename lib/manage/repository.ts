@@ -25,7 +25,7 @@ import type {
   Prospect,
   Quote,
 } from "./types";
-import { sendTextMessage } from "./integrations";
+import { getWhatsAppProvider } from "./whatsapp";
 
 export interface ManageRepository {
   dashboard(): Promise<DashboardState>;
@@ -34,7 +34,7 @@ export interface ManageRepository {
   getConversationById(id: string): Promise<Conversation | null>;
   getMessagesByConversationId(id: string): Promise<ConversationMessage[]>;
   setMode(id: string, mode: AgentMode): Promise<Conversation | null>;
-  sendMessage(id: string, body: string): Promise<unknown>;
+  sendMessage(id: string, body: string, requestId?: string): Promise<unknown>;
   prospects(): Promise<Prospect[]>;
   prospect(id: string): Promise<Prospect | null>;
   createProspect(data: Omit<Prospect, "id">): Promise<Prospect>;
@@ -323,31 +323,77 @@ export class PostgresManageRepository implements ManageRepository {
     ]);
     return this.conversation(id);
   }
-  async sendMessage(id: string, body: string) {
+  async sendMessage(id: string, body: string, requestId?: string) {
     const db = this.db();
+    const [recentDuplicate] = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, id),
+          eq(messages.direction, "OUTBOUND"),
+          eq(messages.senderType, "HUMAN"),
+          eq(messages.body, body),
+          gte(messages.createdAt, new Date(Date.now() - 5_000)),
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    if (recentDuplicate)
+      return {
+        id: recentDuplicate.id,
+        direction: "out",
+        body: recentDuplicate.body,
+        at: clock(recentDuplicate.sentAt),
+        author: "Johan",
+        status: recentDuplicate.status,
+        externalId: recentDuplicate.externalId || undefined,
+      };
     const [target] = await db
-      .select({ phone: contacts.phone })
+      .select({ phone: contacts.phone, externalChatId: conversations.externalChatId })
       .from(conversations)
       .innerJoin(contacts, eq(conversations.contactId, contacts.id))
       .where(eq(conversations.id, id))
       .limit(1);
     if (!target?.phone) throw new Error("Conversation has no phone number");
-    const [message] = await db
+    const inserted = await db
       .insert(messages)
       .values({
         conversationId: id,
+        requestId,
         direction: "OUTBOUND",
         senderType: "HUMAN",
         body,
         status: "PENDING",
       })
+      .onConflictDoNothing({ target: messages.requestId })
       .returning();
+    let message = inserted[0];
+    if (!message && requestId) {
+      [message] = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.requestId, requestId))
+        .limit(1);
+      if (message)
+        return {
+          id: message.id,
+          direction: "out",
+          body: message.body,
+          at: clock(message.sentAt),
+          author: "Johan",
+          status: message.status,
+          externalId: message.externalId || undefined,
+        };
+    }
+    if (!message) throw new Error("Could not create outbound message");
     let externalId: string | undefined;
     try {
-      const response = await sendTextMessage(target.phone, body);
-      const remoteMessage = response.message as
-        Record<string, unknown> | undefined;
-      externalId = remoteMessage?.id ? String(remoteMessage.id) : undefined;
+      const response = await getWhatsAppProvider().sendText(
+        target.externalChatId || target.phone,
+        body,
+      );
+      externalId = response.externalId;
       await db
         .update(messages)
         .set({ status: "SENT", externalId })
@@ -622,7 +668,7 @@ export class PostgresManageRepository implements ManageRepository {
     return {
       online: s.agentEnabled,
       model: "OpenRouter",
-      provider: "WaSender",
+      provider: getWhatsAppProvider().name === "GREEN_API" ? "GREEN-API" : "WaSender",
       activeSessions: sessions.value,
       messagesProcessed: processed.value,
       fallbacks: 0,
