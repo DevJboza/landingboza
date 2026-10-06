@@ -19,6 +19,7 @@
     "test:repository": "tsx scripts/verify-repository.ts",
     "test:message-flow": "tsx scripts/test-message-flow.ts",
     "test:scout": "tsx scripts/test-scout.ts",
+    "test:scout-payload": "tsx scripts/diagnose-scout-payload.ts",
     "test:integrations": "tsx scripts/check-integrations.ts"
   },
   "dependencies": {

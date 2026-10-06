@@ -38,7 +38,10 @@ export const scoutProspectSchema = z.object({
 
 export const scoutImportSchema = z.object({
   schemaVersion: z.literal(1),
-  batchId: z.string().regex(/^scout-\d{4}-\d{2}-\d{2}-perez$/),
+  batchId: z.string().regex(
+    /^scout-(?:\d{4}-\d{2}-\d{2}-perez|test-\d{4}-\d{2}-\d{2}-\d{3})$/,
+    "batchId debe usar scout-YYYY-MM-DD-perez o scout-test-YYYY-MM-DD-NNN",
+  ),
   generatedBy: z.literal("chatgpt"),
   targetArea: z.object({
     country: z.literal("Costa Rica"), province: z.literal("San José"), canton: z.literal("Pérez Zeledón"),

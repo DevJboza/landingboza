@@ -132,6 +132,8 @@ Se analizaron fuentes públicas de negocios de Pérez Zeledón.
 
 Los endpoints internos son `POST /api/internal/scout/prospects/import` y `POST /api/internal/scout/check`. Ambos requieren el mismo Bearer secret. El import admite hasta 50 candidatos, exige al menos una fuente, deduplica contra contactos, negocios, conversaciones, prospectos y outreach, aplica las exclusiones de Coto Brus, San Vito y Sabalito, y crea solamente `prospects.NEW` más `outreach_queue.DRAFT`.
 
+`batchId` admite dos formatos estrictos: `scout-YYYY-MM-DD-perez` para lotes diarios y `scout-test-YYYY-MM-DD-NNN` para pruebas controladas del workflow. No se aceptan identificadores arbitrarios.
+
 ## n8n, GREEN-API y OpenRouter
 
 La capa `WhatsAppProvider` selecciona el proveedor mediante `WHATSAPP_PROVIDER`. Producción usa `GREEN_API`; WaSender queda aislado únicamente como rollback legacy. Configura `GREEN_API_URL`, `GREEN_API_INSTANCE_ID`, `GREEN_API_TOKEN`, `GREEN_API_WEBHOOK_TOKEN`, `N8N_AGENT_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET` y `OPENROUTER_API_KEY`.

@@ -6,9 +6,9 @@ export const ok = (data: unknown, status = 200) =>
     { success: true, data },
     { status, headers: { "Cache-Control": "no-store, private" } },
   );
-export const fail = (code: string, message: string, status: number) =>
+export const fail = (code: string, message: string, status: number, details?: Record<string, unknown>) =>
   NextResponse.json(
-    { success: false, error: { code, message } },
+    { success: false, error: { code, message, ...details } },
     { status, headers: { "Cache-Control": "no-store, private" } },
   );
 export async function requireApiSession() {

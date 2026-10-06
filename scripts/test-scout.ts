@@ -39,6 +39,13 @@ try {
   const duplicateBatch = await importScoutBatch(payload);
   if (!duplicateBatch.duplicateBatch || duplicateBatch.accepted !== 10) throw new Error("Batch idempotency failed");
   process.env.SCOUT_API_SECRET = `qa-${nonce}`;
+  const invalidResponse = await importEndpoint(new Request("http://localhost/api/internal/scout/prospects/import", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer qa-${nonce}` },
+    body: JSON.stringify({ ...payload, batchId: "invalid" }),
+  }));
+  const invalidBody = await invalidResponse.json() as { error?: { issues?: unknown[] } };
+  if (invalidResponse.status !== 400 || !invalidBody.error?.issues?.length)
+    throw new Error("Development INVALID_PAYLOAD response did not include Zod issues");
   const unauthorized = await importEndpoint(new Request("http://localhost/api/internal/scout/prospects/import", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
   }));
