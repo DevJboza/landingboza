@@ -584,6 +584,7 @@ function ConversationInbox({
     const form = e.currentTarget, fd = new FormData(form);
     const created = await api("contacts", { method: "POST", body: JSON.stringify({
       name: fd.get("name"), phone: fd.get("phone"), email: fd.get("email"), city: fd.get("city"),
+      agentMode: fd.get("agentMode"),
     }) });
     setList((x) => [created, ...x.filter((c) => c.id !== created.id)]);
     setSelected(created.id); setAdding(false); form.reset(); notify("Contacto agregado");
@@ -591,9 +592,16 @@ function ConversationInbox({
   const contactModal = adding && <div className="modal-backdrop" onClick={() => setAdding(false)}>
     <form className="small-modal" onSubmit={addContact} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="modal-close" onClick={() => setAdding(false)}>×</button>
-      <h2>Nuevo contacto</h2>
-      <label>Nombre<input name="name" required minLength={2} /></label>
+      <h2>Agregar número al Control Center</h2>
+      <p className="modal-help">Escribe el número con código de país y decide quién atenderá este chat.</p>
       <label>WhatsApp<input name="phone" required placeholder="506XXXXXXXX" /></label>
+      <label>Nombre (opcional)<input name="name" /></label>
+      <label>Modo<select name="agentMode" defaultValue="HUMAN">
+        <option value="HUMAN">Humano — sin respuestas del bot</option>
+        <option value="AUTO">Agente — respuestas automáticas</option>
+        <option value="PAUSED">Pausado</option>
+        <option value="IGNORE">Ignorar por completo</option>
+      </select></label>
       <label>Email<input name="email" type="email" /></label>
       <label>Ciudad<input name="city" /></label>
       <button className="primary-action">Agregar contacto</button>
@@ -653,7 +661,7 @@ function ConversationInbox({
             <h1>Conversaciones</h1>
             <span>{list.filter((x) => x.unread).length} sin leer</span>
           </div>
-          <button onClick={() => setAdding(true)} aria-label="Agregar contacto">＋</button>
+          <button onClick={() => setAdding(true)} aria-label="Agregar número">＋ Número</button>
         </header>
         <div className="chat-search">
           ⌕
@@ -729,6 +737,13 @@ function ConversationInbox({
           <em className={`mode ${current.agentMode.toLowerCase()}`}>
             {current.agentMode}
           </em>
+          <select className="mode-selector" value={current.agentMode} onChange={(e) => {
+            const actions: Record<string, string> = { AUTO: "release", HUMAN: "take", PAUSED: "pause", IGNORE: "ignore", CLOSED: "close" };
+            void mode(actions[e.target.value], `Modo cambiado a ${e.target.value}`);
+          }} aria-label={`Cambiar modo de ${current.phone}`}>
+            <option value="AUTO">Agente</option><option value="HUMAN">Humano</option>
+            <option value="PAUSED">Pausado</option><option value="IGNORE">Ignorar</option><option value="CLOSED">Cerrado</option>
+          </select>
           <button onClick={() => setInfo(true)} className="info-toggle">
             ⓘ
           </button>

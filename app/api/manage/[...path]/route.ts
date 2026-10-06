@@ -46,10 +46,11 @@ const settingsSchema = z.object({
   outOfHoursEnabled: z.boolean().optional(),
 });
 const contactSchema = z.object({
-  name: z.string().trim().min(2),
+  name: z.string().trim().optional(),
   phone: z.string().trim().min(8),
   email: z.string().trim().email().optional().or(z.literal("")),
   city: z.string().trim().optional(),
+  agentMode: z.enum(["AUTO", "HUMAN", "PAUSED", "IGNORE", "CLOSED"]).default("HUMAN"),
 });
 const leadSchema = z.object({
   business: z.string().trim().min(2), contact: z.string().trim(),
@@ -186,12 +187,13 @@ export async function POST(request: Request, context: Context) {
   if (
     p[0] === "conversations" &&
     p[1] &&
-    ["take", "release", "pause", "close"].includes(p[2])
+    ["take", "release", "pause", "ignore", "close"].includes(p[2])
   ) {
     const modes: Record<string, AgentMode> = {
       take: "HUMAN",
       release: "AUTO",
       pause: "PAUSED",
+      ignore: "IGNORE",
       close: "CLOSED",
     };
     const result = await repository.setMode(p[1], modes[p[2]]);

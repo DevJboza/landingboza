@@ -35,7 +35,7 @@ export interface ManageRepository {
   getMessagesByConversationId(id: string): Promise<ConversationMessage[]>;
   setMode(id: string, mode: AgentMode): Promise<Conversation | null>;
   sendMessage(id: string, body: string, requestId?: string): Promise<unknown>;
-  createContact(data: { name: string; phone: string; email?: string; city?: string }): Promise<Conversation>;
+  createContact(data: { name?: string; phone: string; email?: string; city?: string; agentMode: AgentMode }): Promise<Conversation>;
   deleteConversation(id: string): Promise<boolean>;
   prospects(): Promise<Prospect[]>;
   prospect(id: string): Promise<Prospect | null>;
@@ -326,12 +326,13 @@ export class PostgresManageRepository implements ManageRepository {
     ]);
     return this.conversation(id);
   }
-  async createContact(data: { name: string; phone: string; email?: string; city?: string }) {
+  async createContact(data: { name?: string; phone: string; email?: string; city?: string; agentMode: AgentMode }) {
     const db = this.db();
     const phone = data.phone.replace(/\D/g, "");
-    await db.insert(contacts).values({ ...data, phone }).onConflictDoUpdate({
+    const name = data.name?.trim() || phone;
+    await db.insert(contacts).values({ name, phone, email: data.email, city: data.city }).onConflictDoUpdate({
       target: contacts.phone,
-      set: { name: data.name, email: data.email || null, city: data.city || null, updatedAt: new Date() },
+      set: { name, email: data.email || null, city: data.city || null, updatedAt: new Date() },
     });
     const [contact] = await db.select().from(contacts).where(eq(contacts.phone, phone)).limit(1);
     let [conversation] = await db.select().from(conversations)
@@ -340,9 +341,15 @@ export class PostgresManageRepository implements ManageRepository {
       contactId: contact.id,
       externalChatId: `${phone}@c.us`,
       status: "NEW",
-      agentMode: "HUMAN",
+      agentMode: data.agentMode,
       lastMessage: "Contacto agregado manualmente",
     }).returning();
+    else await db.update(conversations).set({
+      agentMode: data.agentMode,
+      status: data.agentMode === "CLOSED" ? "CLOSED" : "ACTIVE",
+      externalChatId: conversation.externalChatId || `${phone}@c.us`,
+      updatedAt: new Date(),
+    }).where(eq(conversations.id, conversation.id));
     return (await this.getConversationById(conversation.id))!;
   }
   async deleteConversation(id: string) {
