@@ -137,6 +137,8 @@ Los endpoints internos son `POST /api/internal/scout/prospects/import` y `POST /
 
 El import normal siempre termina en `outreach_queue.DRAFT` y no envía mensajes. Existe una excepción deliberadamente limitada para probar el pipeline: el payload debe incluir simultáneamente `"testMode": true` y `"autoSend": true`, contener exactamente un prospecto y su teléfono/WhatsApp normalizado debe coincidir exactamente con `SCOUT_TEST_ALLOWED_PHONE`. Un número diferente devuelve `TEST_PHONE_NOT_ALLOWED`. Cuando se cumplen todas las condiciones se crea una conversación `HUMAN`, se envía solamente `suggestedMessage`, se persiste un mensaje `OUTBOUND/AGENT`, el outreach pasa a `SENT` y se registra `SCOUT_TEST_MESSAGE_SENT`.
 
+Para probar únicamente el transporte con un número que ya exista se usa `POST /api/internal/scout/test-send`, autenticado con `SCOUT_API_SECRET`, y body `{ "phone": "...", "message": "..." }`. Solo acepta un string de teléfono que coincida exactamente, tras normalización, con `SCOUT_TEST_ALLOWED_PHONE`. Reutiliza o crea una conversación `HUMAN`, guarda el mensaje `OUTBOUND/AGENT` y no crea prospectos ni outreach ni activa n8n.
+
 ## n8n, GREEN-API y OpenRouter
 
 La capa `WhatsAppProvider` selecciona el proveedor mediante `WHATSAPP_PROVIDER`. Producción usa `GREEN_API`; WaSender queda aislado únicamente como rollback legacy. Configura `GREEN_API_URL`, `GREEN_API_INSTANCE_ID`, `GREEN_API_TOKEN`, `GREEN_API_WEBHOOK_TOKEN`, `N8N_AGENT_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET` y `OPENROUTER_API_KEY`.
