@@ -8,6 +8,7 @@ import {
   greenApiConfiguration,
 } from "@/lib/manage/whatsapp";
 import type { AgentMode, LeadStatus } from "@/lib/manage/types";
+import { discardScoutProspect, excludeScoutProspect, scoutDashboard } from "@/lib/manage/scout";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ path: string[] }> };
@@ -95,6 +96,7 @@ export async function GET(_: Request, context: Context) {
     const followups = await repository.followups();
     const outreach = await repository.outreach();
     const agent = await repository.agent();
+    const scout = await scoutDashboard();
     return ok({
       dashboard,
       conversations,
@@ -104,6 +106,7 @@ export async function GET(_: Request, context: Context) {
       followups,
       outreach,
       agent,
+      scout,
     });
   }
   if (p[0] === "dashboard") return ok(await repository.dashboard());
@@ -127,6 +130,7 @@ export async function GET(_: Request, context: Context) {
   if (p[0] === "quotes") return ok(await repository.quotes());
   if (p[0] === "followups") return ok(await repository.followups());
   if (p[0] === "outreach") return ok(await repository.outreach());
+  if (p[0] === "scout") return ok(await scoutDashboard());
   if (p[0] === "agent" && p[1] === "status")
     return ok(await repository.agent());
   if (p[0] === "system" && p[1] === "health") {
@@ -231,6 +235,11 @@ export async function POST(request: Request, context: Context) {
   }
   if (p[0] === "outreach" && p[1] && p[2] === "approve")
     return ok(await repository.approveOutreach(p[1]));
+  if (p[0] === "scout" && p[1] && p[2] === "exclude")
+    return (await excludeScoutProspect(p[1])) ? ok({ excluded: true }) : fail("NOT_FOUND", "Prospecto no encontrado", 404);
+  if (p[0] === "scout" && p[1] && p[2] === "discard") {
+    return (await discardScoutProspect(p[1])) ? ok({ discarded: true }) : fail("NOT_FOUND", "Prospecto no encontrado", 404);
+  }
   if (p[0] === "agent" && ["pause", "resume"].includes(p[1]))
     return ok(await repository.setAgent(p[1] === "resume"));
   if (p[0] === "quotes") {

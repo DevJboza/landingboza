@@ -8,6 +8,7 @@ import {
   text,
   timestamp,
   uuid,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const agentModeEnum = pgEnum("agent_mode", [
@@ -193,6 +194,21 @@ export const prospects = pgTable("prospects", {
   lastAction: text("last_action").default("").notNull(),
   problems: jsonb("problems").$type<string[]>().default([]).notNull(),
   suggestedMessage: text("suggested_message").default("").notNull(),
+  source: text("source"),
+  sourceUrl: text("source_url"),
+  sourceUrls: jsonb("source_urls").$type<string[]>().default([]).notNull(),
+  discoveredAt: timestamp("discovered_at", { withTimezone: true }),
+  batchId: text("batch_id"),
+  country: text("country"),
+  province: text("province"),
+  canton: text("canton"),
+  address: text("address"),
+  whatsappNumber: text("whatsapp_number"),
+  confidence: numeric("confidence", { precision: 4, scale: 3 }),
+  signals: jsonb("signals").$type<Record<string, unknown>>().default({}).notNull(),
+  evidence: jsonb("evidence").$type<{ claim: string; sourceUrl: string }[]>().default([]).notNull(),
+  suggestedServices: jsonb("suggested_services").$type<string[]>().default([]).notNull(),
+  reasonToContact: text("reason_to_contact"),
   ...audit,
 });
 export const leads = pgTable("leads", {
@@ -315,3 +331,24 @@ export const agentSettings = pgTable("agent_settings", {
   outOfHoursEnabled: boolean("out_of_hours_enabled").default(false).notNull(),
   ...audit,
 });
+
+export const scoutBatches = pgTable("scout_batches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  batchId: text("batch_id").notNull().unique(),
+  generatedBy: text("generated_by").notNull(),
+  targetArea: jsonb("target_area").$type<{ country: string; province: string; canton: string }>().notNull(),
+  received: integer("received").default(0).notNull(),
+  accepted: integer("accepted").default(0).notNull(),
+  rejected: integer("rejected").default(0).notNull(),
+  results: jsonb("results").$type<{ businessName: string; accepted: boolean; reason?: string }[]>().default([]).notNull(),
+  createdAt: audit.createdAt,
+});
+
+export const prospectExclusions = pgTable("prospect_exclusions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  type: text("type").notNull(),
+  value: text("value").notNull(),
+  normalizedValue: text("normalized_value").notNull(),
+  reason: text("reason").default("").notNull(),
+  createdAt: audit.createdAt,
+}, (table) => [uniqueIndex("prospect_exclusions_type_value_idx").on(table.type, table.normalizedValue)]);

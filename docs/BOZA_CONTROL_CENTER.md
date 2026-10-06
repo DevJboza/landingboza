@@ -54,7 +54,83 @@ npm run db:seed
 npm run db:verify
 ```
 
-El seed solo crea los ajustes iniciales del agente y nunca inserta clientes ficticios. `db:verify` comprueba las 14 tablas y prueba operaciones reales de persistencia con registros temporales que elimina al finalizar.
+El seed solo crea los ajustes iniciales del agente y nunca inserta clientes ficticios. `db:verify` comprueba las 16 tablas y prueba operaciones reales de persistencia con registros temporales que elimina al finalizar.
+
+## Scout diario: ChatGPT → correo → n8n
+
+ChatGPT es el Scout. OpenRouter no participa en el flujo normal y solamente puede usarse en n8n como reparación cuando el bloque JSON está ausente o corrupto. El importador nunca llama GREEN-API, nunca crea conversaciones y nunca envía WhatsApp.
+
+Configura únicamente en backend/Vercel:
+
+```env
+SCOUT_API_SECRET=
+```
+
+El workflow esperado en n8n es:
+
+1. Gmail Trigger o IMAP sobre el buzón Scout.
+2. Validar que el remitente coincide exactamente con el remitente autorizado configurado en n8n. No aceptar cualquier correo del buzón.
+3. Verificar que el subject empiece con `BOZA_SCOUT | PEREZ |`.
+4. Extraer exclusivamente el texto comprendido entre `---BOZA_SCOUT_JSON---` y `---END_BOZA_SCOUT_JSON---`.
+5. Ejecutar `JSON.parse`; si funciona, no llamar OpenRouter.
+6. Validar `schemaVersion === 1`.
+7. Hacer `POST https://www.boza.lat/api/internal/scout/prospects/import` con `Authorization: Bearer {{$env.SCOUT_API_SECRET}}` y `Content-Type: application/json`.
+
+Ejemplo exacto de correo:
+
+```text
+Subject: BOZA_SCOUT | PEREZ | 2026-10-06
+
+Se analizaron fuentes públicas de negocios de Pérez Zeledón.
+
+---BOZA_SCOUT_JSON---
+{
+  "schemaVersion": 1,
+  "batchId": "scout-2026-10-06-perez",
+  "generatedBy": "chatgpt",
+  "targetArea": {
+    "country": "Costa Rica",
+    "province": "San José",
+    "canton": "Pérez Zeledón"
+  },
+  "prospects": [{
+    "businessName": "Negocio de prueba estructural",
+    "category": "Servicios",
+    "country": "Costa Rica",
+    "province": "San José",
+    "canton": "Pérez Zeledón",
+    "city": "San Isidro de El General",
+    "address": null,
+    "phone": null,
+    "whatsapp": null,
+    "website": null,
+    "instagram": null,
+    "facebook": null,
+    "source": "chatgpt_daily_scout",
+    "sourceUrls": ["https://example.com/fuente-publica"],
+    "score": 75,
+    "confidence": 0.85,
+    "signals": {
+      "hasWebsite": false,
+      "usesWhatsApp": false,
+      "hasBookingSystem": false,
+      "hasOnlineStore": false,
+      "socialActivity": "unknown"
+    },
+    "opportunity": "Oportunidad sustentada por la fuente pública indicada.",
+    "suggestedServices": ["pagina_web"],
+    "reasonToContact": "Existe una oportunidad de presencia digital.",
+    "suggestedMessage": "Hola, quisiera conversar sobre su presencia digital.",
+    "evidence": [{
+      "claim": "El negocio figura en una fuente pública",
+      "sourceUrl": "https://example.com/fuente-publica"
+    }]
+  }]
+}
+---END_BOZA_SCOUT_JSON---
+```
+
+Los endpoints internos son `POST /api/internal/scout/prospects/import` y `POST /api/internal/scout/check`. Ambos requieren el mismo Bearer secret. El import admite hasta 50 candidatos, exige al menos una fuente, deduplica contra contactos, negocios, conversaciones, prospectos y outreach, aplica las exclusiones de Coto Brus, San Vito y Sabalito, y crea solamente `prospects.NEW` más `outreach_queue.DRAFT`.
 
 ## n8n, GREEN-API y OpenRouter
 

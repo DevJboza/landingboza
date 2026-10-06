@@ -1065,6 +1065,27 @@
   color: var(--mint);
   font-size: 0.62rem;
 }
+.scout-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; margin: 16px 0; }
+.scout-metrics article { padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #0c1815; }
+.scout-metrics small { display: block; color: var(--muted); font-size: .58rem; }
+.scout-metrics b { display: block; margin-top: 8px; color: var(--mint); font-size: 1.3rem; }
+.scout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+.scout-card { padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #0b1714; }
+.scout-card header { display: flex; justify-content: space-between; gap: 12px; }
+.scout-card h2 { margin: 0; font-size: .95rem; }
+.scout-card header p, .scout-card > p { color: var(--muted); font-size: .65rem; }
+.scout-card a { color: var(--mint); overflow-wrap: anywhere; }
+.scout-confidence { color: #9edbc4; font-size: .57rem; margin: 10px 0; }
+.scout-opportunity { padding: 10px; border-left: 2px solid var(--mint); background: #10211c; }
+.service-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+.service-tags span { padding: 4px 7px; border-radius: 12px; background: #153229; color: #a8dfca; font-size: .53rem; }
+.scout-card details { font-size: .62rem; color: var(--muted); margin: 12px 0; }
+.scout-card summary { color: var(--mint); cursor: pointer; }
+.scout-message { display: block; color: var(--muted); font-size: .58rem; }
+.scout-message textarea { width: 100%; min-height: 90px; margin-top: 5px; padding: 9px; resize: vertical; border: 1px solid var(--line); border-radius: 7px; background: #08110f; color: white; }
+.scout-card footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.scout-card footer button { padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #10201c; color: #aabbb6; font-size: .57rem; }
+@media (max-width: 900px) { .scout-metrics { grid-template-columns: repeat(3, 1fr); } }
 .message time {
   display: block;
   text-align: right;

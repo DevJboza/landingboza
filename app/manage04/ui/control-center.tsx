@@ -19,6 +19,7 @@ import type {
 type View =
   | "dashboard"
   | "conversations"
+  | "scout"
   | "prospects"
   | "leads"
   | "quotes"
@@ -44,6 +45,17 @@ type AgentData = {
   humanChats: number;
   settings: Record<string, string | number | boolean>;
 };
+type ScoutProspect = {
+  id: string; businessName: string; category: string; city: string; phone: string;
+  whatsapp: string | null; website: string | null; score: number; confidence: number;
+  opportunity: string; suggestedServices: string[]; sourceUrls: string[];
+  evidence: { claim: string; sourceUrl: string }[]; suggestedMessage: string; outreachStatus: string;
+};
+type ScoutData = {
+  config: { zone: string; dailyTarget: number; minimumScore: number };
+  metrics: { found: number; accepted: number; rejected: number; approved: number; contacted: number; replied: number };
+  prospects: ScoutProspect[];
+};
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
 }
@@ -56,8 +68,10 @@ type Initial = {
   followups: Followup[];
   outreach: OutreachItem[];
   agent: AgentData;
+  scout: ScoutData;
 };
 const nav: [View, string, string][] = [
+  ["scout", "Scout", "S"],
   ["dashboard", "Dashboard", "⌂"],
   ["conversations", "Conversaciones", "◫"],
   ["prospects", "Prospectos", "◎"],
@@ -353,6 +367,7 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
           {view === "conversations" && (
             <Conversations initial={data.conversations} notify={notify} />
           )}{" "}
+          {view === "scout" && <Scout initial={data.scout} notify={notify} />}{" "}
           {view === "prospects" && (
             <Prospects
               initial={data.prospects}
@@ -946,6 +961,44 @@ function ClientInfo({
     </>
   );
 }
+function Scout({ initial, notify }: { initial: ScoutData; notify: (s: string) => void }) {
+  const [data, setData] = useState(initial);
+  async function refresh() { setData(await api("scout")); }
+  async function approve(item: ScoutProspect) {
+    await api(`prospects/${item.id}`, { method: "PATCH", body: JSON.stringify({ suggestedMessage: item.suggestedMessage }) });
+    await api(`outreach/${item.id}/approve`, { method: "POST", body: "{}" });
+    await refresh(); notify("Outreach aprobado; todavía no se ha enviado");
+  }
+  async function action(item: ScoutProspect, name: "discard" | "exclude") {
+    if (name === "exclude" && !confirm(`¿Excluir permanentemente a ${item.businessName}?`)) return;
+    await api(`scout/${item.id}/${name}`, { method: "POST", body: "{}" });
+    await refresh(); notify(name === "exclude" ? "Prospecto excluido permanentemente" : "Prospecto descartado");
+  }
+  const metrics = [
+    ["Encontrados", data.metrics.found], ["Aceptados", data.metrics.accepted], ["Rechazados", data.metrics.rejected],
+    ["Aprobados", data.metrics.approved], ["Contactados", data.metrics.contacted], ["Respondieron", data.metrics.replied],
+  ];
+  return <>
+    <div className="module-head"><div><p className="eyebrow">CHATGPT DAILY SCOUT</p><h1>Scout diario</h1>
+      <p>Zona: {data.config.zone} · Objetivo: {data.config.dailyTarget}/día · Score mínimo: {data.config.minimumScore}</p></div></div>
+    <div className="scout-metrics">{metrics.map(([label, value]) => <article key={label}><small>{label}</small><b>{value}</b></article>)}</div>
+    <div className="scout-grid">{data.prospects.length ? data.prospects.map((item) => <article className="scout-card" key={item.id}>
+      <header><div><h2>{item.businessName}</h2><p>{item.category} · {item.city}</p></div><span className="score">{item.score}</span></header>
+      <div className="scout-confidence">Confianza {Math.round(item.confidence * 100)}% · {item.outreachStatus}</div>
+      <p><b>Contacto:</b> {item.whatsapp || item.phone || "No disponible"}</p>
+      <p><b>Website:</b> {item.website ? <a href={item.website} target="_blank" rel="noreferrer">{item.website}</a> : "No identificado"}</p>
+      <p className="scout-opportunity">{item.opportunity}</p>
+      <div className="service-tags">{item.suggestedServices.map((service) => <span key={service}>{service.replaceAll("_", " ")}</span>)}</div>
+      <details><summary>Ver fuentes y evidencia</summary><ul>{item.sourceUrls.map((url) => <li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>
+        {item.evidence.map((e, i) => <p key={`${e.sourceUrl}-${i}`}>{e.claim}: <a href={e.sourceUrl} target="_blank" rel="noreferrer">fuente</a></p>)}</details>
+      <label className="scout-message">Mensaje propuesto<textarea value={item.suggestedMessage} onChange={(e) => setData((current) => ({ ...current,
+        prospects: current.prospects.map((p) => p.id === item.id ? { ...p, suggestedMessage: e.target.value } : p) }))} /></label>
+      <footer><button onClick={() => action(item, "discard")}>Descartar</button><button onClick={() => action(item, "exclude")}>Excluir permanentemente</button>
+        <button className="primary-action" disabled={item.outreachStatus === "APPROVED"} onClick={() => approve(item)}>Aprobar</button></footer>
+    </article>) : <div className="empty"><b>No hay prospectos Scout todavía</b><small>Los lotes importados por n8n aparecerán aquí.</small></div>}</div>
+  </>;
+}
+
 function Prospects({
   initial,
   outreach: initialOutreach,

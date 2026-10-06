@@ -45,6 +45,11 @@ export default async function ManagePage() {
         quotes: [],
         followups: [],
         outreach: [],
+        scout: {
+          config: { zone: "Pérez Zeledón", dailyTarget: 10, minimumScore: 60 },
+          metrics: { found: 0, accepted: 0, rejected: 0, approved: 0, contacted: 0, replied: 0 },
+          prospects: [],
+        },
         agent: {
           online: false,
           model: "OpenRouter",

@@ -587,6 +587,10 @@ export class PostgresManageRepository implements ManageRepository {
       .update(prospects)
       .set({ lastAction: "Mensaje aprobado", updatedAt: new Date() })
       .where(eq(prospects.id, id));
+    await db.insert(activities).values({
+      type: "OUTREACH_APPROVED", title: "Outreach aprobado", detail: p.business,
+      metadata: { prospectId: id, outreachId: row.id },
+    });
     return {
       id: row.id,
       prospectId: id,

@@ -41,6 +41,8 @@ try {
     "outreach_queue",
     "activities",
     "agent_settings",
+    "scout_batches",
+    "prospect_exclusions",
   ];
   const client = postgres(process.env.DATABASE_URL, { prepare: false, max: 1 });
   const existing = await client<
@@ -148,7 +150,7 @@ try {
     throw new Error("Message history persistence failed");
   console.log(
     JSON.stringify({
-      tables: { expected: 14, found: existing.length, verified: true },
+      tables: { expected: 16, found: existing.length, verified: true },
       prospect: "create-read-update-persisted",
       conversation: "auto-human-persisted",
       lead: "new-interested-persisted",
