@@ -134,42 +134,13 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
   }, []);
   useEffect(() => {
     let active = true;
-    Promise.all([
-      api("dashboard"),
-      api("conversations"),
-      api("prospects"),
-      api("leads"),
-      api("quotes"),
-      api("followups"),
-      api("outreach"),
-      api("agent/status"),
-    ])
-      .then(
-        ([
-          dashboard,
-          conversations,
-          prospects,
-          leads,
-          quotes,
-          followups,
-          outreach,
-          freshAgent,
-        ]) => {
-          if (!active) return;
-          setData({
-            dashboard,
-            conversations,
-            prospects,
-            leads,
-            quotes,
-            followups,
-            outreach,
-            agent: freshAgent,
-          });
-          setAgent(freshAgent);
-          setDataState("ready");
-        },
-      )
+    api("bootstrap")
+      .then((fresh: Initial) => {
+        if (!active) return;
+        setData(fresh);
+        setAgent(fresh.agent);
+        setDataState("ready");
+      })
       .catch(() => {
         if (active) setDataState("error");
       });

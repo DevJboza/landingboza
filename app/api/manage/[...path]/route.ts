@@ -53,6 +53,26 @@ export async function GET(_: Request, context: Context) {
   const denied = await requireApiSession();
   if (denied) return denied;
   const p = (await context.params).path;
+  if (p[0] === "bootstrap") {
+    const dashboard = await repository.dashboard();
+    const conversations = await repository.conversations();
+    const prospects = await repository.prospects();
+    const leads = await repository.leads();
+    const quotes = await repository.quotes();
+    const followups = await repository.followups();
+    const outreach = await repository.outreach();
+    const agent = await repository.agent();
+    return ok({
+      dashboard,
+      conversations,
+      prospects,
+      leads,
+      quotes,
+      followups,
+      outreach,
+      agent,
+    });
+  }
   if (p[0] === "dashboard") return ok(await repository.dashboard());
   if (p[0] === "conversations") {
     if (!p[1]) return ok(await repository.conversations());
