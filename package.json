@@ -22,6 +22,7 @@
     "test:scout-payload": "tsx scripts/diagnose-scout-payload.ts",
     "test:scout-auto-send": "tsx scripts/test-scout-auto-send.ts",
     "test:scout-test-send": "tsx scripts/test-scout-test-send.ts",
+    "test:scout-approve-send": "tsx scripts/test-scout-approve-send.ts",
     "test:integrations": "tsx scripts/check-integrations.ts"
   },
   "dependencies": {

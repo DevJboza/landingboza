@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NextResponse } from "next/server";
 import { checkDatabase } from "@/db";
 import { fail, ok, requireApiSession, validOrigin } from "@/lib/manage/api";
 import { repository } from "@/lib/manage/repository";
@@ -9,6 +10,7 @@ import {
 } from "@/lib/manage/whatsapp";
 import type { AgentMode, LeadStatus } from "@/lib/manage/types";
 import { discardScoutProspect, excludeScoutProspect, scoutDashboard } from "@/lib/manage/scout";
+import { approveAndSendScoutProspect, ScoutSendError } from "@/lib/manage/scout-outreach";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ path: string[] }> };
@@ -74,6 +76,10 @@ const businessSchema = z.object({
   city: z.string().trim().optional(), website: z.string().trim().optional(),
   interest: z.string().trim().optional(), objective: z.string().trim().optional(),
   score: z.number().int().min(0).max(100).optional(),
+});
+const scoutSendSchema = z.object({ message: z.string().trim().min(1).max(4000) });
+const scoutBulkSendSchema = z.object({
+  items: z.array(z.object({ prospectId: z.string().uuid(), message: z.string().trim().min(1).max(4000) })).min(1).max(20),
 });
 async function json(request: Request) {
   try {
@@ -163,6 +169,31 @@ export async function POST(request: Request, context: Context) {
     return fail("INVALID_ORIGIN", "Solicitud rechazada", 403);
   const p = (await context.params).path,
     data = await json(request);
+  if (p[0] === "scout" && p[1] === "prospects" && p[2] === "bulk-approve-and-send") {
+    const parsed = scoutBulkSendSchema.safeParse(data);
+    if (!parsed.success) return fail("INVALID_PAYLOAD", "Selección Scout inválida", 400);
+    const results: unknown[] = [];
+    for (const item of parsed.data.items) {
+      try { results.push({ success: true, ...(await approveAndSendScoutProspect(item.prospectId, item.message)) }); }
+      catch (error) {
+        results.push(error instanceof ScoutSendError
+          ? { success: false, prospectId: item.prospectId, code: error.code, message: error.message }
+          : { success: false, prospectId: item.prospectId, code: "UNKNOWN", message: "Error inesperado" });
+      }
+    }
+    return ok({ results, sent: results.filter((x) => (x as { success: boolean }).success).length });
+  }
+  if (p[0] === "scout" && p[1] === "prospects" && p[2] && p[3] === "approve-and-send") {
+    const parsed = scoutSendSchema.safeParse(data);
+    if (!parsed.success) return fail("INVALID_PAYLOAD", "Mensaje inválido", 400);
+    try {
+      const result = await approveAndSendScoutProspect(p[2], parsed.data.message);
+      return NextResponse.json({ success: true, ...result }, { headers: { "Cache-Control": "no-store, private" } });
+    } catch (error) {
+      if (error instanceof ScoutSendError) return fail(error.code, error.message, error.status);
+      return fail("SCOUT_SEND_FAILED", "No fue posible enviar el outreach", 502);
+    }
+  }
   if (p[0] === "conversations" && p[1] && p[2] === "business") {
     const parsed = businessSchema.safeParse(data);
     if (!parsed.success) return fail("INVALID_PAYLOAD", "Datos del negocio invÃ¡lidos", 400);

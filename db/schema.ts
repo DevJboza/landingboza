@@ -299,6 +299,8 @@ export const outreachQueue = pgTable("outreach_queue", {
   channel: text("channel").default("WhatsApp").notNull(),
   externalId: text("external_id"),
   error: text("error"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
   ...audit,
 });
 export const activities = pgTable("activities", {

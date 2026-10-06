@@ -114,7 +114,7 @@ async function api(path: string, init?: RequestInit) {
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message || "Ocurrió un error");
-  return body.data;
+  return body.data ?? body;
 }
 export default function ControlCenter({ initial }: { initial: Initial }) {
   const [data, setData] = useState(initial),
@@ -962,12 +962,33 @@ function ClientInfo({
   );
 }
 function Scout({ initial, notify }: { initial: ScoutData; notify: (s: string) => void }) {
-  const [data, setData] = useState(initial);
+  const [data, setData] = useState(initial),
+    [selected, setSelected] = useState<Set<string>>(new Set()),
+    [confirming, setConfirming] = useState<ScoutProspect[]>([]),
+    [sending, setSending] = useState(false);
   async function refresh() { setData(await api("scout")); }
-  async function approve(item: ScoutProspect) {
-    await api(`prospects/${item.id}`, { method: "PATCH", body: JSON.stringify({ suggestedMessage: item.suggestedMessage }) });
-    await api(`outreach/${item.id}/approve`, { method: "POST", body: "{}" });
-    await refresh(); notify("Outreach aprobado; todavía no se ha enviado");
+  const sendable = data.prospects.filter((item) => item.outreachStatus !== "SENT");
+  async function approveAndSend() {
+    if (!confirming.length || sending) return;
+    setSending(true);
+    try {
+      if (confirming.length === 1) {
+        const item = confirming[0];
+        await api(`scout/prospects/${item.id}/approve-and-send`, {
+          method: "POST", body: JSON.stringify({ message: item.suggestedMessage }),
+        });
+        notify("Mensaje enviado");
+      } else {
+        const result = await api("scout/prospects/bulk-approve-and-send", { method: "POST",
+          body: JSON.stringify({ items: confirming.map((item) => ({ prospectId: item.id, message: item.suggestedMessage })) }) });
+        const failed = result.results.length - result.sent;
+        notify(failed ? `${result.sent} enviados; ${failed} no enviados` : `${result.sent} mensajes enviados`);
+      }
+      setConfirming([]); setSelected(new Set()); await refresh();
+    } catch (error) {
+      await refresh().catch(() => undefined);
+      notify(error instanceof Error ? error.message : "No fue posible enviar");
+    } finally { setSending(false); }
   }
   async function action(item: ScoutProspect, name: "discard" | "exclude") {
     if (name === "exclude" && !confirm(`¿Excluir permanentemente a ${item.businessName}?`)) return;
@@ -980,11 +1001,17 @@ function Scout({ initial, notify }: { initial: ScoutData; notify: (s: string) =>
   ];
   return <>
     <div className="module-head"><div><p className="eyebrow">CHATGPT DAILY SCOUT</p><h1>Scout diario</h1>
-      <p>Zona: {data.config.zone} · Objetivo: {data.config.dailyTarget}/día · Score mínimo: {data.config.minimumScore}</p></div></div>
+      <p>Zona: {data.config.zone} · Objetivo: {data.config.dailyTarget}/día · Score mínimo: {data.config.minimumScore}</p></div>
+      <button disabled={!selected.size} onClick={() => setConfirming(sendable.filter((item) => selected.has(item.id)))}>
+        Aprobar y enviar seleccionados ({selected.size})</button></div>
+    <div className="scout-selection"><label><input type="checkbox" checked={Boolean(sendable.length) && selected.size === sendable.length}
+      onChange={(e) => setSelected(e.target.checked ? new Set(sendable.map((item) => item.id)) : new Set())} /> Seleccionar disponibles</label></div>
     <div className="scout-metrics">{metrics.map(([label, value]) => <article key={label}><small>{label}</small><b>{value}</b></article>)}</div>
     <div className="scout-grid">{data.prospects.length ? data.prospects.map((item) => <article className="scout-card" key={item.id}>
-      <header><div><h2>{item.businessName}</h2><p>{item.category} · {item.city}</p></div><span className="score">{item.score}</span></header>
-      <div className="scout-confidence">Confianza {Math.round(item.confidence * 100)}% · {item.outreachStatus}</div>
+      <header><label className="scout-check"><input type="checkbox" disabled={item.outreachStatus === "SENT"} checked={selected.has(item.id)}
+        onChange={(e) => setSelected((current) => { const next = new Set(current); if (e.target.checked) next.add(item.id); else next.delete(item.id); return next; })} /></label>
+        <div><h2>{item.businessName}</h2><p>{item.category} · {item.city}</p></div><span className="score">{item.score}</span></header>
+      <div className="scout-confidence">Confianza {Math.round(item.confidence * 100)}% · <b>{item.outreachStatus}</b></div>
       <p><b>Contacto:</b> {item.whatsapp || item.phone || "No disponible"}</p>
       <p><b>Website:</b> {item.website ? <a href={item.website} target="_blank" rel="noreferrer">{item.website}</a> : "No identificado"}</p>
       <p className="scout-opportunity">{item.opportunity}</p>
@@ -994,8 +1021,17 @@ function Scout({ initial, notify }: { initial: ScoutData; notify: (s: string) =>
       <label className="scout-message">Mensaje propuesto<textarea value={item.suggestedMessage} onChange={(e) => setData((current) => ({ ...current,
         prospects: current.prospects.map((p) => p.id === item.id ? { ...p, suggestedMessage: e.target.value } : p) }))} /></label>
       <footer><button onClick={() => action(item, "discard")}>Descartar</button><button onClick={() => action(item, "exclude")}>Excluir permanentemente</button>
-        <button className="primary-action" disabled={item.outreachStatus === "APPROVED"} onClick={() => approve(item)}>Aprobar</button></footer>
+        <button className="primary-action" disabled={item.outreachStatus === "SENT"} onClick={() => setConfirming([item])}>
+          {item.outreachStatus === "SENT" ? "Enviado" : "Aprobar y enviar"}</button></footer>
     </article>) : <div className="empty"><b>No hay prospectos Scout todavía</b><small>Los lotes importados por n8n aparecerán aquí.</small></div>}</div>
+    {confirming.length > 0 && <div className="modal-backdrop" onClick={() => !sending && setConfirming([])}>
+      <article className="small-modal" onClick={(e) => e.stopPropagation()}><h2>Confirmar envío por WhatsApp</h2>
+        <p>{confirming.length === 1
+          ? `Se enviará este mensaje por WhatsApp a ${confirming[0].whatsapp || confirming[0].phone}.`
+          : `Se enviarán ${confirming.length} mensajes por WhatsApp a los contactos seleccionados.`}</p>
+        <div className="modal-actions"><button disabled={sending} onClick={() => setConfirming([])}>Cancelar</button>
+          <button className="primary-action" disabled={sending} onClick={approveAndSend}>{sending ? "Enviando..." : "Aprobar y enviar"}</button></div>
+      </article></div>}
   </>;
 }
 

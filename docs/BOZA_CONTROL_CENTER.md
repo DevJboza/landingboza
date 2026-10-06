@@ -139,6 +139,8 @@ El import normal siempre termina en `outreach_queue.DRAFT` y no envía mensajes.
 
 Para probar únicamente el transporte con un número que ya exista se usa `POST /api/internal/scout/test-send`, autenticado con `SCOUT_API_SECRET`, y body `{ "phone": "...", "message": "..." }`. Solo acepta un string de teléfono que coincida exactamente, tras normalización, con `SCOUT_TEST_ALLOWED_PHONE`. Reutiliza o crea una conversación `HUMAN`, guarda el mensaje `OUTBOUND/AGENT` y no crea prospectos ni outreach ni activa n8n.
 
+En Control Center, la aprobación operativa usa `POST /api/manage/scout/prospects/:id/approve-and-send` con el mensaje final editado. Solo acepta outreach `DRAFT`, `APPROVED` o un `FAILED` reintentable, reclama el envío con el `requestId` único `scout-outreach:<outreachId>`, crea o reutiliza una conversación `HUMAN` y cambia a `SENT` únicamente después de que el proveedor devuelve `idMessage`. La selección múltiple usa `POST /api/manage/scout/prospects/bulk-approve-and-send`, con máximo 20 elementos, y aplica la misma protección individual a cada outreach.
+
 ## n8n, GREEN-API y OpenRouter
 
 La capa `WhatsAppProvider` selecciona el proveedor mediante `WHATSAPP_PROVIDER`. Producción usa `GREEN_API`; WaSender queda aislado únicamente como rollback legacy. Configura `GREEN_API_URL`, `GREEN_API_INSTANCE_ID`, `GREEN_API_TOKEN`, `GREEN_API_WEBHOOK_TOKEN`, `N8N_AGENT_WEBHOOK_URL`, `N8N_WEBHOOK_SECRET` y `OPENROUTER_API_KEY`.

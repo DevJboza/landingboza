@@ -1066,6 +1066,9 @@
   font-size: 0.62rem;
 }
 .scout-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; margin: 16px 0; }
+.scout-selection { display: flex; justify-content: flex-end; margin: -5px 0 12px; color: var(--muted); font-size: .62rem; }
+.scout-selection label, .scout-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.scout-check { align-self: flex-start; margin-top: 2px; }
 .scout-metrics article { padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #0c1815; }
 .scout-metrics small { display: block; color: var(--muted); font-size: .58rem; }
 .scout-metrics b { display: block; margin-top: 8px; color: var(--mint); font-size: 1.3rem; }

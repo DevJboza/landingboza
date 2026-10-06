@@ -250,7 +250,7 @@ export async function scoutDashboard() {
     metrics: {
       found: batches.reduce((n, x) => n + x.received, 0), accepted: batches.reduce((n, x) => n + x.accepted, 0),
       rejected: batches.reduce((n, x) => n + x.rejected, 0),
-      approved: rows.filter((x) => x.outreach.status === "APPROVED").length,
+      approved: rows.filter((x) => ["APPROVED", "SENT"].includes(x.outreach.status)).length,
       contacted: rows.filter((x) => x.outreach.status === "SENT").length,
       replied: rows.filter((x) => x.outreach.status === "REPLIED").length,
     },
