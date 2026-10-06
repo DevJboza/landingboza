@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { eq, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { activities, contacts, conversations, messages } from "@/db/schema";
@@ -105,17 +105,86 @@ export async function POST(request: Request) {
   const event = parsed.data;
   const db = getDb();
 
-  if (
-    ["outgoingAPIMessageReceived", "outgoingMessageReceived", "outgoingMessageStatus"].includes(
-      event.typeWebhook,
-    )
-  ) {
+  if (event.typeWebhook === "outgoingMessageStatus") {
     if (event.idMessage)
-      await db
-        .update(messages)
-        .set({ status: messageStatus(event.status) })
+      await db.update(messages).set({ status: messageStatus(event.status) })
         .where(eq(messages.externalId, event.idMessage));
     return ok({ accepted: true, type: event.typeWebhook });
+  }
+
+  if (["outgoingAPIMessageReceived", "outgoingMessageReceived"].includes(event.typeWebhook)) {
+    if (!event.idMessage || !event.senderData)
+      return fail("INVALID_PAYLOAD", "Mensaje saliente incompleto", 400);
+    const chatId = event.senderData.chatId;
+    if (chatId.endsWith("@g.us")) return ok({ accepted: true, ignored: "group" });
+    const phone = chatId.replace(/@.*$/, "").replace(/\D/g, "");
+    if (!phone) return fail("INVALID_PAYLOAD", "Destinatario invÃ¡lido", 400);
+    const [known] = await db.select({ id: messages.id }).from(messages)
+      .where(eq(messages.externalId, event.idMessage)).limit(1);
+    if (known) {
+      await db.update(messages).set({ status: messageStatus(event.status) })
+        .where(eq(messages.id, known.id));
+      return ok({ accepted: true, duplicate: true });
+    }
+    const name = event.senderData.chatName || event.senderData.senderContactName || phone;
+    await db.insert(contacts).values({ name, phone }).onConflictDoUpdate({
+      target: contacts.phone,
+      set: { updatedAt: new Date() },
+    });
+    const [contact] = await db.select().from(contacts).where(eq(contacts.phone, phone)).limit(1);
+    let [conversation] = await db.select().from(conversations).where(
+      or(eq(conversations.externalChatId, chatId), eq(conversations.contactId, contact.id)),
+    ).limit(1);
+    const text = messageText(event.messageData);
+    const sentAt = eventDate(event.timestamp);
+    if (!conversation) {
+      [conversation] = await db.insert(conversations).values({
+        contactId: contact.id, externalChatId: chatId, status: "ACTIVE", agentMode: "AUTO",
+        lastMessage: text, lastMessageAt: sentAt,
+      }).returning();
+    }
+    // A webhook can beat the HTTP response used by Control Center. Correlate it
+    // with the local pending row so the same send is never shown twice.
+    const [pending] = await db.select().from(messages).where(and(
+      eq(messages.conversationId, conversation.id),
+      eq(messages.direction, "OUTBOUND"),
+      eq(messages.body, text),
+      eq(messages.status, "PENDING"),
+      isNull(messages.externalId),
+      gte(messages.createdAt, new Date(Date.now() - 120_000)),
+    )).orderBy(desc(messages.createdAt)).limit(1);
+    let messageId: string;
+    if (pending) {
+      await db.update(messages).set({ externalId: event.idMessage, status: "SENT", sentAt })
+        .where(eq(messages.id, pending.id));
+      messageId = pending.id;
+    } else {
+      const [inserted] = await db.insert(messages).values({
+        conversationId: conversation.id,
+        externalId: event.idMessage,
+        direction: "OUTBOUND",
+        senderType: event.typeWebhook === "outgoingAPIMessageReceived" ? "AGENT" : "HUMAN",
+        body: text,
+        status: messageStatus(event.status),
+        sentAt,
+        metadata: { provider: "GREEN_API", typeWebhook: event.typeWebhook },
+      }).onConflictDoNothing({ target: messages.externalId }).returning({ id: messages.id });
+      if (!inserted) return ok({ accepted: true, duplicate: true });
+      messageId = inserted.id;
+    }
+    await Promise.all([
+      db.update(conversations).set({ lastMessage: text, lastMessageAt: sentAt, updatedAt: new Date() })
+        .where(eq(conversations.id, conversation.id)),
+      db.insert(activities).values({
+        type: "message.outbound", title: "Mensaje saliente sincronizado",
+        detail: event.typeWebhook === "outgoingAPIMessageReceived" ? "Agente n8n" : "WhatsApp",
+        contactId: contact.id, conversationId: conversation.id,
+      }),
+    ]);
+    console.info("[GREEN-API webhook] outbound message persisted", {
+      messageId, conversationId: conversation.id, source: event.typeWebhook,
+    });
+    return ok({ accepted: true, duplicate: false });
   }
 
   if (event.typeWebhook !== "incomingMessageReceived")

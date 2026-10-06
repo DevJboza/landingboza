@@ -347,7 +347,7 @@ export default function ControlCenter({ initial }: { initial: Initial }) {
             />
           )}{" "}
           {view === "leads" && <Leads initial={data.leads} notify={notify} />}{" "}
-          {view === "quotes" && <Quotes data={data.quotes} />}{" "}
+          {view === "quotes" && <Quotes initial={data.quotes} notify={notify} />}{" "}
           {view === "followups" && (
             <Followups initial={data.followups} notify={notify} />
           )}{" "}
@@ -547,14 +547,6 @@ function Conversations(props: {
   initial: Conversation[];
   notify: (s: string) => void;
 }) {
-  if (!props.initial.length)
-    return (
-      <div className="empty">
-        <span>◫</span>
-        <b>No hay conversaciones todavía</b>
-        <small>Las conversaciones entrantes de GREEN-API aparecerán aquí.</small>
-      </div>
-    );
   return <ConversationInbox {...props} />;
 }
 function ConversationInbox({
@@ -570,14 +562,15 @@ function ConversationInbox({
     [query, setQuery] = useState(""),
     [info, setInfo] = useState(false),
     [mobileChat, setMobileChat] = useState(false),
-    [sending, setSending] = useState(false);
+    [sending, setSending] = useState(false),
+    [adding, setAdding] = useState(false);
   const current = list.find((x) => x.id === selected) || list[0];
   useEffect(() => {
     let active = true;
     async function refresh() {
       try {
         const fresh = (await api("conversations")) as Conversation[];
-        if (active && fresh.length) setList(fresh);
+        if (active) setList(fresh);
       } catch {}
     }
     const timer = setInterval(refresh, 4000);
@@ -586,6 +579,29 @@ function ConversationInbox({
       clearInterval(timer);
     };
   }, []);
+  async function addContact(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget, fd = new FormData(form);
+    const created = await api("contacts", { method: "POST", body: JSON.stringify({
+      name: fd.get("name"), phone: fd.get("phone"), email: fd.get("email"), city: fd.get("city"),
+    }) });
+    setList((x) => [created, ...x.filter((c) => c.id !== created.id)]);
+    setSelected(created.id); setAdding(false); form.reset(); notify("Contacto agregado");
+  }
+  const contactModal = adding && <div className="modal-backdrop" onClick={() => setAdding(false)}>
+    <form className="small-modal" onSubmit={addContact} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="modal-close" onClick={() => setAdding(false)}>×</button>
+      <h2>Nuevo contacto</h2>
+      <label>Nombre<input name="name" required minLength={2} /></label>
+      <label>WhatsApp<input name="phone" required placeholder="506XXXXXXXX" /></label>
+      <label>Email<input name="email" type="email" /></label>
+      <label>Ciudad<input name="city" /></label>
+      <button className="primary-action">Agregar contacto</button>
+    </form>
+  </div>;
+  if (!current) return <><div className="empty"><span>◫</span><b>No hay conversaciones todavía</b>
+    <small>Agrega un contacto o espera un mensaje de GREEN-API.</small>
+    <button className="primary-action" onClick={() => setAdding(true)}>＋ Agregar contacto</button></div>{contactModal}</>;
   const shown = list.filter(
     (x) =>
       (filter === "Todas" ||
@@ -637,7 +653,7 @@ function ConversationInbox({
             <h1>Conversaciones</h1>
             <span>{list.filter((x) => x.unread).length} sin leer</span>
           </div>
-          <button>＋</button>
+          <button onClick={() => setAdding(true)} aria-label="Agregar contacto">＋</button>
         </header>
         <div className="chat-search">
           ⌕
@@ -730,6 +746,12 @@ function ConversationInbox({
           <button onClick={() => mode("close", "Conversación cerrada")}>
             × Cerrar
           </button>
+          <button onClick={async () => {
+            if (!confirm("¿Borrar este chat y todos sus mensajes? Esta acción no se puede deshacer.")) return;
+            await api(`conversations/${current.id}`, { method: "DELETE" });
+            const remaining = list.filter((c) => c.id !== current.id);
+            setList(remaining); setSelected(remaining[0]?.id || ""); notify("Chat borrado");
+          }}>Borrar</button>
         </div>
         <div className="messages">
           <div className="day-separator">
@@ -766,6 +788,7 @@ function ConversationInbox({
         </form>
       </section>
       <ClientInfo c={current} open={info} close={() => setInfo(false)} />
+      {contactModal}
     </div>
   );
 }
@@ -863,7 +886,8 @@ function Prospects({
     [items, setItems] = useState(initial),
     [outreach, setOutreach] = useState(initialOutreach),
     [filter, setFilter] = useState("Todos"),
-    [query, setQuery] = useState("");
+    [query, setQuery] = useState(""),
+    [creating, setCreating] = useState(false);
   const shown = items.filter(
     (p) =>
       (filter === "Todos" ||
@@ -886,6 +910,16 @@ function Prospects({
     setSelected(p);
     notify("Mensaje aprobado y agregado a la cola");
   }
+  async function create(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget, fd = new FormData(form);
+    const item = await api("prospects", { method: "POST", body: JSON.stringify({
+      business: fd.get("business"), category: fd.get("category") || "", city: fd.get("city") || "",
+      phone: fd.get("phone") || "", whatsapp: Boolean(fd.get("whatsapp")), web: "", instagram: "", facebook: "",
+      score: Number(fd.get("score") || 0), opportunity: fd.get("opportunity") || "Por definir", status: "NEW",
+      lastAction: "Creado manualmente", problems: [], suggestedMessage: "",
+    }) });
+    setItems((x) => [item, ...x]); setCreating(false); form.reset(); notify("Prospecto creado");
+  }
   return (
     <>
       <div className="module-head">
@@ -894,7 +928,7 @@ function Prospects({
           <h1>Prospectos</h1>
           <p>Oportunidades detectadas y priorizadas para contacto.</p>
         </div>
-        <button>＋ Nuevo prospecto</button>
+        <button onClick={() => setCreating(true)}>＋ Nuevo prospecto</button>
       </div>
       <div className="toolbar">
         <div className="chat-search">
@@ -1042,6 +1076,19 @@ function Prospects({
           </article>
         </div>
       )}
+      {creating && <div className="modal-backdrop" onClick={() => setCreating(false)}>
+        <form className="small-modal" onSubmit={create} onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="modal-close" onClick={() => setCreating(false)}>×</button>
+          <h2>Nuevo prospecto</h2>
+          <label>Negocio<input name="business" required minLength={2} /></label>
+          <label>Categoría<input name="category" /></label><label>Ciudad<input name="city" /></label>
+          <label>Teléfono<input name="phone" /></label>
+          <label><input name="whatsapp" type="checkbox" /> Tiene WhatsApp</label>
+          <label>Score<input name="score" type="number" min="0" max="100" defaultValue="0" /></label>
+          <label>Oportunidad<input name="opportunity" /></label>
+          <button className="primary-action">Guardar prospecto</button>
+        </form>
+      </div>}
     </>
   );
 }
@@ -1052,7 +1099,7 @@ function Leads({
   initial: Lead[];
   notify: (s: string) => void;
 }) {
-  const [items, setItems] = useState(initial);
+  const [items, setItems] = useState(initial), [creating, setCreating] = useState(false);
   async function move(id: string, stage: string) {
     const data = await api(`leads/${id}`, {
       method: "PATCH",
@@ -1060,6 +1107,14 @@ function Leads({
     });
     setItems((x) => x.map((y) => (y.id === id ? data : y)));
     notify(`Lead movido a ${stageNames[stage]}`);
+  }
+  async function create(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget, fd = new FormData(form);
+    const item = await api("leads", { method: "POST", body: JSON.stringify({
+      business: fd.get("business"), contact: fd.get("contact") || "", value: Number(fd.get("value") || 0),
+      score: Number(fd.get("score") || 0), stage: "NEW",
+    }) });
+    setItems((x) => [item, ...x]); setCreating(false); form.reset(); notify("Lead creado");
   }
   const stages = [
     "NEW",
@@ -1079,7 +1134,7 @@ function Leads({
           <h1>Leads</h1>
           <p>Del primer contacto al cierre, sin perder contexto.</p>
         </div>
-        <button>＋ Nuevo lead</button>
+        <button onClick={() => setCreating(true)}>＋ Nuevo lead</button>
       </div>
       <div className="kanban">
         {stages.map((stage) => (
@@ -1116,10 +1171,25 @@ function Leads({
           </section>
         ))}
       </div>
+      {creating && <div className="modal-backdrop" onClick={() => setCreating(false)}><form className="small-modal" onSubmit={create} onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-close" onClick={() => setCreating(false)}>×</button><h2>Nuevo lead</h2>
+        <label>Negocio<input name="business" required /></label><label>Contacto<input name="contact" /></label>
+        <label>Valor estimado<input name="value" type="number" min="0" defaultValue="0" /></label>
+        <label>Score<input name="score" type="number" min="0" max="100" defaultValue="0" /></label>
+        <button className="primary-action">Guardar lead</button></form></div>}
     </>
   );
 }
-function Quotes({ data }: { data: Quote[] }) {
+function Quotes({ initial, notify }: { initial: Quote[]; notify: (s: string) => void }) {
+  const [items, setItems] = useState(initial), [open, setOpen] = useState(false);
+  async function create(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget, fd = new FormData(form);
+    const item = await api("quotes", { method: "POST", body: JSON.stringify({
+      client: fd.get("client"), business: fd.get("business"), service: fd.get("service"), scope: fd.get("scope"),
+      notes: fd.get("notes") || "", estimatedPrice: Number(fd.get("estimatedPrice") || 0), status: "DRAFT",
+    }) });
+    setItems((x) => [item, ...x]); setOpen(false); form.reset(); notify("Cotización creada");
+  }
   return (
     <>
       <div className="module-head">
@@ -1128,11 +1198,11 @@ function Quotes({ data }: { data: Quote[] }) {
           <h1>Cotizaciones</h1>
           <p>Alcances y decisiones comerciales en un solo lugar.</p>
         </div>
-        <button>＋ Nueva cotización</button>
+        <button onClick={() => setOpen(true)}>＋ Nueva cotización</button>
       </div>
       <CardTable
         headers={["Cliente", "Servicio", "Alcance", "Estimado", "Estado"]}
-        rows={data.map((x) => [
+        rows={items.map((x) => [
           `${x.client}|${x.business}`,
           x.service,
           x.scope,
@@ -1140,6 +1210,12 @@ function Quotes({ data }: { data: Quote[] }) {
           x.status,
         ])}
       />
+      {open && <div className="modal-backdrop" onClick={() => setOpen(false)}><form className="small-modal" onSubmit={create} onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-close" onClick={() => setOpen(false)}>×</button><h2>Nueva cotización</h2>
+        <label>Cliente<input name="client" required /></label><label>Negocio<input name="business" required /></label>
+        <label>Servicio<input name="service" required /></label><label>Alcance<textarea name="scope" required /></label>
+        <label>Precio estimado<input name="estimatedPrice" type="number" min="0" required /></label><label>Notas<textarea name="notes" /></label>
+        <button className="primary-action">Guardar cotización</button></form></div>}
     </>
   );
 }
@@ -1150,7 +1226,15 @@ function Followups({
   initial: Followup[];
   notify: (s: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false), [items, setItems] = useState(initial);
+  async function create(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget, fd = new FormData(form);
+    const item = await api("followups", { method: "POST", body: JSON.stringify({
+      client: fd.get("client"), reason: fd.get("reason"), date: fd.get("date"), time: fd.get("time"),
+      channel: fd.get("channel"), message: fd.get("message") || "", status: "PENDING",
+    }) });
+    setItems((x) => [...x, item]); setOpen(false); form.reset(); notify("Seguimiento programado");
+  }
   return (
     <>
       <div className="module-head">
@@ -1162,7 +1246,7 @@ function Followups({
         <button onClick={() => setOpen(true)}>＋ Programar seguimiento</button>
       </div>
       <div className="followup-grid">
-        {initial.map((x) => (
+        {items.map((x) => (
           <article key={x.id}>
             <time>
               <b>{x.time}</b>
@@ -1184,11 +1268,7 @@ function Followups({
         <div className="modal-backdrop">
           <form
             className="small-modal"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setOpen(false);
-              notify("Seguimiento programado");
-            }}
+            onSubmit={create}
           >
             <button
               type="button"
@@ -1200,22 +1280,24 @@ function Followups({
             <h2>Programar seguimiento</h2>
             <label>
               Cliente
-              <input required />
+              <input name="client" required />
             </label>
             <label>
               Motivo
-              <input required />
+              <input name="reason" required />
             </label>
             <div className="field-pair">
               <label>
                 Fecha
-                <input type="date" required />
+                <input name="date" type="date" required />
               </label>
               <label>
                 Hora
-                <input type="time" required />
+                <input name="time" type="time" required />
               </label>
             </div>
+            <label>Canal<select name="channel" defaultValue="WhatsApp"><option>WhatsApp</option><option>Llamada</option><option>Email</option></select></label>
+            <label>Mensaje<textarea name="message" /></label>
             <button className="primary-action">Guardar seguimiento</button>
           </form>
         </div>

@@ -75,9 +75,28 @@ const human = await deliver(payload(humanId, "HUMAN MODE TEST"));
 const humanBody = (await human.json()) as { data?: { agent?: string } };
 if (humanBody.data?.agent !== "skipped") throw new Error("HUMAN mode activated agent");
 
+const outboundId = `green-test-${randomUUID()}`;
+const outboundText = "RESPUESTA DEL BOT N8N";
+const outbound = await deliver({
+  typeWebhook: "outgoingAPIMessageReceived",
+  idMessage: outboundId,
+  timestamp: Math.floor(Date.now() / 1000),
+  senderData: { chatId, chatName: "Prueba GREEN-API" },
+  messageData: {
+    typeMessage: "textMessage",
+    textMessageData: { textMessage: outboundText },
+  },
+});
+if (outbound.status !== 200) throw new Error(`Outbound webhook returned ${outbound.status}`);
+const [outboundMessage] = await db.select().from(schema.messages)
+  .where(eq(schema.messages.externalId, outboundId));
+if (!outboundMessage || outboundMessage.direction !== "OUTBOUND" ||
+    outboundMessage.senderType !== "AGENT" || outboundMessage.body !== outboundText)
+  throw new Error("n8n outbound message was not persisted correctly");
+
 const repositoryMessages =
   await repositoryModule.repository.getMessagesByConversationId(conversation.id);
-if (repositoryMessages.length !== 2) throw new Error("Repository message count mismatch");
+if (repositoryMessages.length !== 3) throw new Error("Repository message count mismatch");
 
 await db.delete(schema.messages).where(eq(schema.messages.conversationId, conversation.id));
 await db.delete(schema.conversations).where(eq(schema.conversations.id, conversation.id));
@@ -89,6 +108,7 @@ console.log(
     idempotency: "verified",
     autoMode: "n8n-not-configured",
     humanMode: "agent-skipped",
+    n8nOutbound: "persisted-as-agent",
     repositoryMessages: repositoryMessages.length,
     cleanup: "completed",
   }),

@@ -35,6 +35,8 @@ export interface ManageRepository {
   getMessagesByConversationId(id: string): Promise<ConversationMessage[]>;
   setMode(id: string, mode: AgentMode): Promise<Conversation | null>;
   sendMessage(id: string, body: string, requestId?: string): Promise<unknown>;
+  createContact(data: { name: string; phone: string; email?: string; city?: string }): Promise<Conversation>;
+  deleteConversation(id: string): Promise<boolean>;
   prospects(): Promise<Prospect[]>;
   prospect(id: string): Promise<Prospect | null>;
   createProspect(data: Omit<Prospect, "id">): Promise<Prospect>;
@@ -42,6 +44,7 @@ export interface ManageRepository {
   approveOutreach(id: string): Promise<OutreachItem | null>;
   outreach(): Promise<OutreachItem[]>;
   leads(): Promise<Lead[]>;
+  createLead(data: Omit<Lead, "id" | "lastActivity">): Promise<Lead>;
   updateLead(id: string, stage: LeadStatus): Promise<Lead | null>;
   quotes(): Promise<Quote[]>;
   createQuote(data: Omit<Quote, "id">): Promise<Quote>;
@@ -323,6 +326,29 @@ export class PostgresManageRepository implements ManageRepository {
     ]);
     return this.conversation(id);
   }
+  async createContact(data: { name: string; phone: string; email?: string; city?: string }) {
+    const db = this.db();
+    const phone = data.phone.replace(/\D/g, "");
+    await db.insert(contacts).values({ ...data, phone }).onConflictDoUpdate({
+      target: contacts.phone,
+      set: { name: data.name, email: data.email || null, city: data.city || null, updatedAt: new Date() },
+    });
+    const [contact] = await db.select().from(contacts).where(eq(contacts.phone, phone)).limit(1);
+    let [conversation] = await db.select().from(conversations)
+      .where(eq(conversations.contactId, contact.id)).limit(1);
+    if (!conversation) [conversation] = await db.insert(conversations).values({
+      contactId: contact.id,
+      externalChatId: `${phone}@c.us`,
+      status: "NEW",
+      agentMode: "HUMAN",
+      lastMessage: "Contacto agregado manualmente",
+    }).returning();
+    return (await this.getConversationById(conversation.id))!;
+  }
+  async deleteConversation(id: string) {
+    const [deleted] = await this.db().delete(conversations).where(eq(conversations.id, id)).returning({ id: conversations.id });
+    return Boolean(deleted);
+  }
   async sendMessage(id: string, body: string, requestId?: string) {
     const db = this.db();
     const [recentDuplicate] = await db
@@ -573,6 +599,16 @@ export class PostgresManageRepository implements ManageRepository {
     return (
       await this.db().select().from(leads).orderBy(desc(leads.lastActivityAt))
     ).map((x) => this.mapLead(x));
+  }
+  async createLead(data: Omit<Lead, "id" | "lastActivity">) {
+    const [row] = await this.db().insert(leads).values({
+      businessName: data.business,
+      contactName: data.contact,
+      estimatedValue: String(data.value),
+      score: data.score,
+      stage: data.stage,
+    }).returning();
+    return this.mapLead(row);
   }
   async updateLead(id: string, stage: LeadStatus) {
     const [row] = await this.db()

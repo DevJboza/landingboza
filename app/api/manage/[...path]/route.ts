@@ -45,6 +45,28 @@ const settingsSchema = z.object({
   aiFallback: z.boolean().optional(),
   outOfHoursEnabled: z.boolean().optional(),
 });
+const contactSchema = z.object({
+  name: z.string().trim().min(2),
+  phone: z.string().trim().min(8),
+  email: z.string().trim().email().optional().or(z.literal("")),
+  city: z.string().trim().optional(),
+});
+const leadSchema = z.object({
+  business: z.string().trim().min(2), contact: z.string().trim(),
+  value: z.number().min(0), score: z.number().int().min(0).max(100),
+  stage: z.enum(["NEW", "CONTACTED", "REPLIED", "INTERESTED", "QUALIFIED", "QUOTE", "MEETING", "WON", "LOST"]),
+});
+const quoteSchema = z.object({
+  client: z.string().trim().min(2), business: z.string().trim().min(2),
+  service: z.string().trim().min(2), scope: z.string().trim().min(2), notes: z.string(),
+  estimatedPrice: z.number().min(0), status: z.enum(["DRAFT", "SENT", "VIEWED", "ACCEPTED", "REJECTED"]),
+});
+const followupSchema = z.object({
+  client: z.string().trim().min(2), reason: z.string().trim().min(2),
+  date: z.string().min(10), time: z.string().min(5),
+  channel: z.enum(["WhatsApp", "Llamada", "Email"]), message: z.string(),
+  status: z.enum(["PENDING", "TODAY", "COMPLETED", "CANCELLED"]),
+});
 async function json(request: Request) {
   try {
     return await request.json();
@@ -183,25 +205,44 @@ export async function POST(request: Request, context: Context) {
       ? ok(await repository.createProspect(parsed.data), 201)
       : fail("INVALID_PAYLOAD", "Prospecto inválido", 400);
   }
+  if (p[0] === "contacts") {
+    const parsed = contactSchema.safeParse(data);
+    return parsed.success ? ok(await repository.createContact(parsed.data), 201)
+      : fail("INVALID_PAYLOAD", "Contacto invÃ¡lido", 400);
+  }
+  if (p[0] === "leads") {
+    const parsed = leadSchema.safeParse(data);
+    return parsed.success ? ok(await repository.createLead(parsed.data), 201)
+      : fail("INVALID_PAYLOAD", "Lead invÃ¡lido", 400);
+  }
   if (p[0] === "outreach" && p[1] && p[2] === "approve")
     return ok(await repository.approveOutreach(p[1]));
   if (p[0] === "agent" && ["pause", "resume"].includes(p[1]))
     return ok(await repository.setAgent(p[1] === "resume"));
-  if (p[0] === "quotes")
-    return ok(
-      await repository.createQuote(
-        data as Parameters<typeof repository.createQuote>[0],
-      ),
-      201,
-    );
-  if (p[0] === "followups")
-    return ok(
-      await repository.createFollowup(
-        data as Parameters<typeof repository.createFollowup>[0],
-      ),
-      201,
-    );
+  if (p[0] === "quotes") {
+    const parsed = quoteSchema.safeParse(data);
+    return parsed.success ? ok(await repository.createQuote(parsed.data), 201)
+      : fail("INVALID_PAYLOAD", "CotizaciÃ³n invÃ¡lida", 400);
+  }
+  if (p[0] === "followups") {
+    const parsed = followupSchema.safeParse(data);
+    return parsed.success ? ok(await repository.createFollowup(parsed.data), 201)
+      : fail("INVALID_PAYLOAD", "Seguimiento invÃ¡lido", 400);
+  }
   return fail("NOT_FOUND", "Acción no encontrada", 404);
+}
+
+export async function DELETE(request: Request, context: Context) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
+  if (!validOrigin(request)) return fail("INVALID_ORIGIN", "Solicitud rechazada", 403);
+  const p = (await context.params).path;
+  if (p[0] === "conversations" && p[1]) {
+    return (await repository.deleteConversation(p[1]))
+      ? ok({ deleted: true })
+      : fail("NOT_FOUND", "ConversaciÃ³n no encontrada", 404);
+  }
+  return fail("NOT_FOUND", "AcciÃ³n no encontrada", 404);
 }
 
 export async function PATCH(request: Request, context: Context) {
