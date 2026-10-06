@@ -117,3 +117,28 @@ export function greenApiConfiguration() {
     instanceId: process.env.GREEN_API_INSTANCE_ID || null,
   };
 }
+
+export async function configureGreenApiWebhook(webhookUrl: string) {
+  const url = process.env.GREEN_API_URL;
+  const instance = process.env.GREEN_API_INSTANCE_ID;
+  const token = process.env.GREEN_API_TOKEN;
+  const webhookToken = process.env.GREEN_API_WEBHOOK_TOKEN;
+  if (!url || !instance || !token || !webhookToken)
+    throw new Error("GREEN-API webhook is not configured");
+  await jsonRequest(
+    `${url.replace(/\/$/, "")}/waInstance${instance}/setSettings/${token}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        webhookUrl,
+        webhookUrlToken: `Bearer ${webhookToken.replace(/^Bearer\s+/i, "")}`,
+        incomingWebhook: "yes",
+        outgoingWebhook: "yes",
+        outgoingMessageWebhook: "yes",
+        outgoingAPIMessageWebhook: "yes",
+        stateWebhook: "yes",
+      }),
+    },
+  );
+  return { configured: true, webhookUrl };
+}

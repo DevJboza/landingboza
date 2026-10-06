@@ -2,7 +2,11 @@ import { z } from "zod";
 import { checkDatabase } from "@/db";
 import { fail, ok, requireApiSession, validOrigin } from "@/lib/manage/api";
 import { repository } from "@/lib/manage/repository";
-import { getWhatsAppProvider, greenApiConfiguration } from "@/lib/manage/whatsapp";
+import {
+  configureGreenApiWebhook,
+  getWhatsAppProvider,
+  greenApiConfiguration,
+} from "@/lib/manage/whatsapp";
 import type { AgentMode, LeadStatus } from "@/lib/manage/types";
 
 export const runtime = "nodejs";
@@ -126,6 +130,21 @@ export async function POST(request: Request, context: Context) {
     return fail("INVALID_ORIGIN", "Solicitud rechazada", 403);
   const p = (await context.params).path,
     data = await json(request);
+  if (p[0] === "system" && p[1] === "configure-green-api") {
+    try {
+      return ok(
+        await configureGreenApiWebhook(
+          "https://www.boza.lat/api/webhooks/green-api",
+        ),
+      );
+    } catch {
+      return fail(
+        "GREEN_API_CONFIGURATION_FAILED",
+        "No fue posible configurar GREEN-API",
+        502,
+      );
+    }
+  }
   if (p[0] === "conversations" && p[1] && p[2] === "message") {
     const parsed = bodySchema.safeParse(data);
     if (!parsed.success)

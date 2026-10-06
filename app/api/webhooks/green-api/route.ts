@@ -42,7 +42,7 @@ function authorized(request: Request) {
     /^Bearer\s+/i,
     "",
   );
-  const expected = Buffer.from(secret);
+  const expected = Buffer.from(secret.replace(/^Bearer\s+/i, ""));
   const actual = Buffer.from(supplied);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
