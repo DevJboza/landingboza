@@ -27,8 +27,9 @@ async function jsonRequest(url: string, init?: RequestInit) {
 function personalChatId(value: string) {
   if (value.endsWith("@g.us")) throw new Error("Group messages are not allowed");
   if (value.endsWith("@c.us")) return value;
-  const phone = value.replace(/@.*$/, "").replace(/\D/g, "");
-  if (!phone) throw new Error("Invalid WhatsApp destination");
+  const digits = value.replace(/@.*$/, "").replace(/\D/g, "");
+  const phone = digits.length === 8 ? `506${digits}` : digits;
+  if (!phone || phone.length < 10) throw new Error("Invalid WhatsApp destination");
   return `${phone}@c.us`;
 }
 

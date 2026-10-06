@@ -1032,6 +1032,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.message p strong { font-weight: 800; color: #fff; }
+.message p em { font-style: italic; }
+.message p s { opacity: 0.72; }
+.message p code {
+  display: inline-block;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #06100e;
+  color: #b7ead7;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+}
 .message.out:has(small:first-child) { border-bottom-right-radius: 4px; }
 .mode-selector {
   width: auto;

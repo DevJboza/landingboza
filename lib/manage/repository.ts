@@ -329,7 +329,8 @@ export class PostgresManageRepository implements ManageRepository {
   }
   async createContact(data: { name?: string; phone: string; email?: string; city?: string; agentMode: AgentMode }) {
     const db = this.db();
-    const phone = data.phone.replace(/\D/g, "");
+    const digits = data.phone.replace(/\D/g, "");
+    const phone = digits.length === 8 ? `506${digits}` : digits;
     const name = data.name?.trim() || phone;
     await db.insert(contacts).values({ name, phone, email: data.email, city: data.city }).onConflictDoUpdate({
       target: contacts.phone,
@@ -404,7 +405,7 @@ export class PostgresManageRepository implements ManageRepository {
         externalId: recentDuplicate.externalId || undefined,
       };
     const [target] = await db
-      .select({ phone: contacts.phone, externalChatId: conversations.externalChatId })
+      .select({ phone: contacts.phone })
       .from(conversations)
       .innerJoin(contacts, eq(conversations.contactId, contacts.id))
       .where(eq(conversations.id, id))
@@ -444,7 +445,7 @@ export class PostgresManageRepository implements ManageRepository {
     let externalId: string | undefined;
     try {
       const response = await getWhatsAppProvider().sendText(
-        target.externalChatId || target.phone,
+        target.phone,
         body,
       );
       externalId = response.externalId;

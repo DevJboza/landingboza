@@ -79,6 +79,19 @@ const stageNames: Record<string, string> = {
   WON: "Ganado",
   LOST: "Perdido",
 };
+function WhatsAppText({ text }: { text: string }) {
+  const parts = text.split(/(```[\s\S]*?```|\*\*[^*\n]+\*\*|\*[^*\n]+\*|__[^_\n]+__|_[^_\n]+_|~~[^~\n]+~~|~[^~\n]+~)/g);
+  return <>{parts.map((part, index) => {
+    if (part.startsWith("```") && part.endsWith("```")) return <code key={index}>{part.slice(3, -3)}</code>;
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*")) return <strong key={index}>{part.slice(1, -1)}</strong>;
+    if (part.startsWith("__") && part.endsWith("__")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("_") && part.endsWith("_")) return <em key={index}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("~~") && part.endsWith("~~")) return <s key={index}>{part.slice(2, -2)}</s>;
+    if (part.startsWith("~") && part.endsWith("~")) return <s key={index}>{part.slice(1, -1)}</s>;
+    return part;
+  })}</>;
+}
 async function api(path: string, init?: RequestInit) {
   const res = await fetch(`/api/manage/${path}`, {
     ...init,
@@ -658,6 +671,8 @@ function ConversationInbox({
       );
       form.reset();
       notify("Mensaje enviado");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No se pudo enviar el mensaje");
     } finally {
       setSending(false);
     }
@@ -784,7 +799,7 @@ function ConversationInbox({
           {current.messages.map((m) => (
             <div className={`message ${m.direction}`} key={m.id}>
               <small>{m.author}</small>
-              <p>{m.body}</p>
+              <p><WhatsAppText text={m.body} /></p>
               <time>
                 {m.at} {m.direction === "out" && "✓✓"}
               </time>
