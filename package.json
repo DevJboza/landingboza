@@ -20,6 +20,7 @@
     "test:message-flow": "tsx scripts/test-message-flow.ts",
     "test:scout": "tsx scripts/test-scout.ts",
     "test:scout-payload": "tsx scripts/diagnose-scout-payload.ts",
+    "test:scout-auto-send": "tsx scripts/test-scout-auto-send.ts",
     "test:integrations": "tsx scripts/check-integrations.ts"
   },
   "dependencies": {

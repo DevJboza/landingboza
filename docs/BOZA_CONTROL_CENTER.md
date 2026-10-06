@@ -64,6 +64,7 @@ Configura únicamente en backend/Vercel:
 
 ```env
 SCOUT_API_SECRET=
+SCOUT_TEST_ALLOWED_PHONE=
 ```
 
 El workflow esperado en n8n es:
@@ -133,6 +134,8 @@ Se analizaron fuentes públicas de negocios de Pérez Zeledón.
 Los endpoints internos son `POST /api/internal/scout/prospects/import` y `POST /api/internal/scout/check`. Ambos requieren el mismo Bearer secret. El import admite hasta 50 candidatos, exige al menos una fuente, deduplica contra contactos, negocios, conversaciones, prospectos y outreach, aplica las exclusiones de Coto Brus, San Vito y Sabalito, y crea solamente `prospects.NEW` más `outreach_queue.DRAFT`.
 
 `batchId` admite dos formatos estrictos: `scout-YYYY-MM-DD-perez` para lotes diarios y `scout-test-YYYY-MM-DD-NNN` para pruebas controladas del workflow. No se aceptan identificadores arbitrarios.
+
+El import normal siempre termina en `outreach_queue.DRAFT` y no envía mensajes. Existe una excepción deliberadamente limitada para probar el pipeline: el payload debe incluir simultáneamente `"testMode": true` y `"autoSend": true`, contener exactamente un prospecto y su teléfono/WhatsApp normalizado debe coincidir exactamente con `SCOUT_TEST_ALLOWED_PHONE`. Un número diferente devuelve `TEST_PHONE_NOT_ALLOWED`. Cuando se cumplen todas las condiciones se crea una conversación `HUMAN`, se envía solamente `suggestedMessage`, se persiste un mensaje `OUTBOUND/AGENT`, el outreach pasa a `SENT` y se registra `SCOUT_TEST_MESSAGE_SENT`.
 
 ## n8n, GREEN-API y OpenRouter
 

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { fail, ok } from "@/lib/manage/api";
-import { importScoutBatch, scoutImportSchema } from "@/lib/manage/scout";
+import { importScoutBatch, ScoutTestModeError, scoutImportSchema } from "@/lib/manage/scout";
 
 export const runtime = "nodejs";
 
@@ -23,5 +23,11 @@ export async function POST(request: Request) {
       400,
       process.env.NODE_ENV !== "production" ? { issues: parsed.error.issues } : undefined,
     );
-  return ok(await importScoutBatch(parsed.data), 201);
+  try {
+    return ok(await importScoutBatch(parsed.data), 201);
+  } catch (error) {
+    if (error instanceof ScoutTestModeError)
+      return fail(error.code, "Teléfono no autorizado para pruebas Scout", 400);
+    throw error;
+  }
 }
