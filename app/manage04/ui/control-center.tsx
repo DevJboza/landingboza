@@ -4,6 +4,7 @@ import {
   FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -564,6 +565,7 @@ function ConversationInbox({
     [mobileChat, setMobileChat] = useState(false),
     [sending, setSending] = useState(false),
     [adding, setAdding] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const current = list.find((x) => x.id === selected) || list[0];
   useEffect(() => {
     let active = true;
@@ -579,6 +581,13 @@ function ConversationInbox({
       clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const element = messagesRef.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selected, current?.messages.length]);
   async function addContact(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget, fd = new FormData(form);
@@ -768,7 +777,7 @@ function ConversationInbox({
             setList(remaining); setSelected(remaining[0]?.id || ""); notify("Chat borrado");
           }}>Borrar</button>
         </div>
-        <div className="messages">
+        <div className="messages" ref={messagesRef}>
           <div className="day-separator">
             <span>HOY</span>
           </div>

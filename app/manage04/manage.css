@@ -744,6 +744,7 @@
 }
 .inbox {
   height: calc(100vh - 136px);
+  max-height: calc(100dvh - 136px);
   display: grid;
   grid-template-columns: 310px minmax(420px, 1fr) 288px;
   border: 1px solid var(--line);
@@ -919,9 +920,12 @@
 .chat-center {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   background: #091210;
 }
 .chat-header {
+  flex: 0 0 66px;
   height: 66px;
   padding: 0 16px;
   border-bottom: 1px solid var(--line);
@@ -961,6 +965,7 @@
   display: none !important;
 }
 .quick-actions {
+  flex: 0 0 45px;
   height: 45px;
   padding: 7px 13px;
   display: flex;
@@ -983,8 +988,10 @@
   color: #fff;
 }
 .messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px 20px;
   background: radial-gradient(circle at 60% 20%, #10241e88, transparent 38%);
 }
@@ -1053,6 +1060,7 @@
   font-size: 0.5rem;
 }
 .composer {
+  flex: 0 0 auto;
   padding: 11px;
   border-top: 1px solid var(--line);
   display: flex;
@@ -2088,6 +2096,7 @@
   .inbox {
     display: block;
     height: calc(100vh - 100px);
+    max-height: calc(100dvh - 100px);
     position: relative;
   }
   .chat-list {
