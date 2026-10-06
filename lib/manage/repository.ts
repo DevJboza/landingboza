@@ -37,6 +37,7 @@ export interface ManageRepository {
   sendMessage(id: string, body: string, requestId?: string): Promise<unknown>;
   createContact(data: { name?: string; phone: string; email?: string; city?: string; agentMode: AgentMode }): Promise<Conversation>;
   deleteConversation(id: string): Promise<boolean>;
+  registerBusiness(id: string, data: { name: string; category?: string; city?: string; website?: string; interest?: string; objective?: string; score?: number }): Promise<Conversation | null>;
   prospects(): Promise<Prospect[]>;
   prospect(id: string): Promise<Prospect | null>;
   createProspect(data: Omit<Prospect, "id">): Promise<Prospect>;
@@ -355,6 +356,26 @@ export class PostgresManageRepository implements ManageRepository {
   async deleteConversation(id: string) {
     const [deleted] = await this.db().delete(conversations).where(eq(conversations.id, id)).returning({ id: conversations.id });
     return Boolean(deleted);
+  }
+  async registerBusiness(id: string, data: { name: string; category?: string; city?: string; website?: string; interest?: string; objective?: string; score?: number }) {
+    const db = this.db();
+    const [target] = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+    if (!target) return null;
+    let businessId = target.businessId;
+    if (businessId) {
+      await db.update(businesses).set({ name: data.name, category: data.category || null, city: data.city || null,
+        website: data.website || null, updatedAt: new Date() }).where(eq(businesses.id, businessId));
+    } else {
+      const [business] = await db.insert(businesses).values({ name: data.name, category: data.category,
+        city: data.city, website: data.website }).returning();
+      businessId = business.id;
+    }
+    await db.update(conversations).set({ businessId, interest: data.interest || null,
+      objective: data.objective || null, score: data.score ?? target.score, updatedAt: new Date() })
+      .where(eq(conversations.id, id));
+    await db.insert(activities).values({ type: "business.registered", title: "Negocio registrado",
+      detail: data.name, contactId: target.contactId, conversationId: id });
+    return this.getConversationById(id);
   }
   async sendMessage(id: string, body: string, requestId?: string) {
     const db = this.db();

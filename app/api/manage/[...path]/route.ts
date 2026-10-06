@@ -68,6 +68,12 @@ const followupSchema = z.object({
   channel: z.enum(["WhatsApp", "Llamada", "Email"]), message: z.string(),
   status: z.enum(["PENDING", "TODAY", "COMPLETED", "CANCELLED"]),
 });
+const businessSchema = z.object({
+  name: z.string().trim().min(2), category: z.string().trim().optional(),
+  city: z.string().trim().optional(), website: z.string().trim().optional(),
+  interest: z.string().trim().optional(), objective: z.string().trim().optional(),
+  score: z.number().int().min(0).max(100).optional(),
+});
 async function json(request: Request) {
   try {
     return await request.json();
@@ -153,6 +159,12 @@ export async function POST(request: Request, context: Context) {
     return fail("INVALID_ORIGIN", "Solicitud rechazada", 403);
   const p = (await context.params).path,
     data = await json(request);
+  if (p[0] === "conversations" && p[1] && p[2] === "business") {
+    const parsed = businessSchema.safeParse(data);
+    if (!parsed.success) return fail("INVALID_PAYLOAD", "Datos del negocio invÃ¡lidos", 400);
+    const result = await repository.registerBusiness(p[1], parsed.data);
+    return result ? ok(result) : fail("NOT_FOUND", "ConversaciÃ³n no encontrada", 404);
+  }
   if (p[0] === "system" && p[1] === "configure-green-api") {
     try {
       return ok(

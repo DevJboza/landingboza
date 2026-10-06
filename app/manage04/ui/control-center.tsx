@@ -802,7 +802,8 @@ function ConversationInbox({
           </button>
         </form>
       </section>
-      <ClientInfo c={current} open={info} close={() => setInfo(false)} />
+      <ClientInfo c={current} open={info} close={() => setInfo(false)} notify={notify}
+        onUpdate={(updated) => setList((items) => items.map((item) => item.id === updated.id ? updated : item))} />
       {contactModal}
     </div>
   );
@@ -811,12 +812,26 @@ function ClientInfo({
   c,
   open,
   close,
+  onUpdate,
+  notify,
 }: {
   c: Conversation;
   open: boolean;
   close: () => void;
+  onUpdate: (c: Conversation) => void;
+  notify: (s: string) => void;
 }) {
+  const [businessOpen, setBusinessOpen] = useState(false);
+  async function registerBusiness(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const form = e.currentTarget, fd = new FormData(form);
+    const updated = await api(`conversations/${c.id}/business`, { method: "PATCH", body: JSON.stringify({
+      name: fd.get("name"), category: fd.get("category"), city: fd.get("city"), website: fd.get("website"),
+      interest: fd.get("interest"), objective: fd.get("objective"), score: Number(fd.get("score") || 0),
+    }) });
+    onUpdate(updated); setBusinessOpen(false); notify("Negocio registrado en la base");
+  }
   return (
+    <>
     <aside className={open ? "client-info open" : "client-info"}>
       <header>
         <h2>Información del cliente</h2>
@@ -828,6 +843,9 @@ function ClientInfo({
         </span>
         <h3>{c.business}</h3>
         <p>{c.name}</p>
+        <button className="register-business" onClick={() => setBusinessOpen(true)}>
+          {c.business === "Sin negocio" ? "＋ Registrar negocio" : "Editar negocio"}
+        </button>
         <span className="hot">🔥 Lead caliente</span>
       </div>
       <div
@@ -886,6 +904,22 @@ function ClientInfo({
       </div>
       <button className="secondary-action">＋ Crear seguimiento</button>
     </aside>
+    {businessOpen && <div className="modal-backdrop" onClick={() => setBusinessOpen(false)}>
+      <form className="small-modal" onSubmit={registerBusiness} onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-close" onClick={() => setBusinessOpen(false)}>×</button>
+        <h2>{c.business === "Sin negocio" ? "Registrar negocio" : "Editar negocio"}</h2>
+        <p className="modal-help">Quedará vinculado a {c.name} y a todo el historial de este chat.</p>
+        <label>Nombre del negocio<input name="name" required defaultValue={c.business === "Sin negocio" ? "" : c.business} /></label>
+        <label>Categoría<input name="category" defaultValue={c.category} /></label>
+        <label>Ciudad<input name="city" defaultValue={c.city} /></label>
+        <label>Sitio web<input name="website" placeholder="https://" /></label>
+        <label>Interés<input name="interest" defaultValue={c.interest} /></label>
+        <label>Objetivo<textarea name="objective" defaultValue={c.objective} /></label>
+        <label>Score<input name="score" type="number" min="0" max="100" defaultValue={c.score} /></label>
+        <button className="primary-action">Guardar negocio</button>
+      </form>
+    </div>}
+    </>
   );
 }
 function Prospects({
